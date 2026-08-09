@@ -1,0 +1,22 @@
+{
+  "versions": {
+    "1.20.1": {
+      "mods": [
+        { "name": "jei-1.20.1-15.20.0.28.jar", "size": "12 MB", "url": "https://mediafilez.org/minecraft/mods/jei-1.20.1.jar" },
+        { "name": "create-1.20.1-0.5.1.f.jar", "size": "23 MB", "url": "https://mediafilez.org/minecraft/mods/create-1.20.1.jar" },
+        { "name": "sodium-1.20.1.jar", "size": "1 MB", "url": "https://mediafilez.org/minecraft/mods/sodium-1.20.1.jar" }
+      ],
+      "resourcepacks": [
+        { "name": "Faithful-1.20.1.zip", "size": "8 MB", "url": "https://mediafilez.org/minecraft/resourcepacks/Faithful-1.20.1.zip" }
+      ],
+      "shaderpacks": [
+        { "name": "BSL-Shaders-1.20.1.zip", "size": "3 MB", "url": "https://mediafilez.org/minecraft/shaderpacks/BSL-1.20.1.zip" }
+      ]
+    },
+    "1.21.1": {
+      "mods": [
+        { "name": "sodium-1.21.1.jar", "size": "1 MB", "url": "https://mediafilez.org/minecraft/mods/sodium-1.21.1.jar" }
+      ]
+    }
+  }
+}
