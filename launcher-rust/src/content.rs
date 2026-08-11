@@ -29,7 +29,7 @@ pub struct ContentFile {
 }
 
 /// The full content index.
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct ContentIndex {
     pub versions: HashMap<String, HashMap<String, Vec<ContentFile>>>,
 }

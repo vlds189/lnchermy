@@ -1,16 +1,16 @@
 // http.rs - HTTP helpers wrapping reqwest blocking.
 //
-// Centralizes User-Agent handling, file downloads with atomic writes, and
-// simple GET-text helpers. The PowerShell launcher used Invoke-WebRequest;
-// reqwest with rustls replaces it without any system dependency.
+// IMPORTANT: a single reqwest::blocking::Client is reused for ALL requests.
+// Creating a new client per call would rebuild the connection pool + TLS state
+// each time, making bulk downloads (thousands of assets) 10-100x slower.
 
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+use std::sync::LazyLock;
+use std::time::Duration;
 
-/// User-Agent sent on requests that don't override it. Most Mojang / Forge /
-/// Adoptium endpoints accept any UA; only optifine.net requires a browser UA,
-/// which callers pass explicitly via `get_text_ua` / `download_file_ua`.
+/// User-Agent sent on requests that don't override it.
 pub const DEFAULT_UA: &str = concat!(
     "mc-launcher/",
     env!("CARGO_PKG_VERSION"),
@@ -21,25 +21,30 @@ pub const DEFAULT_UA: &str = concat!(
 pub const BROWSER_UA: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
-/// Build a blocking reqwest client with our default UA + rustls.
-pub fn client() -> reqwest::blocking::Client {
+/// Shared client with connection pooling + 30s timeout. Reused across ALL
+/// requests so connections are kept alive between downloads.
+static SHARED_CLIENT: LazyLock<reqwest::blocking::Client> = LazyLock::new(|| {
     reqwest::blocking::Client::builder()
         .user_agent(DEFAULT_UA)
+        .timeout(Duration::from_secs(30))
+        .pool_idle_timeout(Some(Duration::from_secs(90)))
         .build()
         .expect("reqwest client build")
-}
+});
 
-/// Build a client with a custom User-Agent.
-pub fn client_with_ua(ua: &str) -> reqwest::blocking::Client {
+/// Shared client with browser UA (for optifine.net).
+static BROWSER_CLIENT: LazyLock<reqwest::blocking::Client> = LazyLock::new(|| {
     reqwest::blocking::Client::builder()
-        .user_agent(ua)
+        .user_agent(BROWSER_UA)
+        .timeout(Duration::from_secs(30))
+        .pool_idle_timeout(Some(Duration::from_secs(90)))
         .build()
-        .expect("reqwest client build")
-}
+        .expect("reqwest browser client build")
+});
 
 /// GET a text body (default UA). Errors propagated as String.
 pub fn get_text(url: &str) -> Result<String, String> {
-    let resp = client()
+    let resp = SHARED_CLIENT
         .get(url)
         .send()
         .map_err(|e| format!("GET {url}: {e}"))?;
@@ -49,9 +54,9 @@ pub fn get_text(url: &str) -> Result<String, String> {
     resp.text().map_err(|e| format!("read body {url}: {e}"))
 }
 
-/// GET a text body with a custom UA.
-pub fn get_text_ua(url: &str, ua: &str) -> Result<String, String> {
-    let resp = client_with_ua(ua)
+/// GET a text body with browser UA (optifine.net).
+pub fn get_text_ua(url: &str, _ua: &str) -> Result<String, String> {
+    let resp = BROWSER_CLIENT
         .get(url)
         .send()
         .map_err(|e| format!("GET {url}: {e}"))?;
@@ -67,6 +72,22 @@ pub fn download_file(url: &str, dest: &Path, force: bool) -> Result<(), String> 
     if dest.exists() && !force {
         return Ok(());
     }
+    download_with_client(&SHARED_CLIENT, url, dest)
+}
+
+/// Download with browser UA (optifine.net).
+pub fn download_file_ua(url: &str, dest: &Path, _ua: &str, force: bool) -> Result<(), String> {
+    if dest.exists() && !force {
+        return Ok(());
+    }
+    download_with_client(&BROWSER_CLIENT, url, dest)
+}
+
+fn download_with_client(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    dest: &Path,
+) -> Result<(), String> {
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
     }
@@ -74,7 +95,7 @@ pub fn download_file(url: &str, dest: &Path, force: bool) -> Result<(), String> 
         "{}.part",
         dest.extension().and_then(|e| e.to_str()).unwrap_or("dat")
     ));
-    let resp = client()
+    let resp = client
         .get(url)
         .send()
         .map_err(|e| format!("GET {url}: {e}"))?;
@@ -93,40 +114,9 @@ pub fn download_file(url: &str, dest: &Path, force: bool) -> Result<(), String> 
     Ok(())
 }
 
-/// Download with a custom UA (optifine.net etc.).
-pub fn download_file_ua(url: &str, dest: &Path, ua: &str, force: bool) -> Result<(), String> {
-    if dest.exists() && !force {
-        return Ok(());
-    }
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
-    }
-    let tmp = dest.with_extension(format!(
-        "{}.part",
-        dest.extension().and_then(|e| e.to_str()).unwrap_or("dat")
-    ));
-    let resp = client_with_ua(ua)
-        .get(url)
-        .send()
-        .map_err(|e| format!("GET {url}: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("GET {url}: HTTP {}", resp.status()));
-    }
-    let bytes = resp
-        .bytes()
-        .map_err(|e| format!("read body {url}: {e}"))?;
-    let mut f = fs::File::create(&tmp).map_err(|e| format!("create {}: {e}", tmp.display()))?;
-    f.write_all(&bytes)
-        .map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    f.sync_all().ok();
-    drop(f);
-    fs::rename(&tmp, dest).map_err(|e| format!("rename: {e}"))?;
-    Ok(())
-}
-
 /// HEAD probe: returns true if the URL responds 2xx.
 pub fn url_exists(url: &str) -> bool {
-    client()
+    SHARED_CLIENT
         .head(url)
         .send()
         .map(|r| r.status().is_success())

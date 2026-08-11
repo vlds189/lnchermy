@@ -113,12 +113,10 @@ fn progress_overlay(ctx: &egui::Context, state: &AppState) {
 
 /// The version-picker window for installing vanilla Minecraft.
 fn install_vanilla_window(ctx: &egui::Context, state: &mut AppState) {
-    // Drain the manifest from the thread-local if the background fetch finished.
-    MANIFEST.with(|m| {
-        if let Some(ids) = m.borrow_mut().take() {
-            state.remote_versions = ids;
-        }
-    });
+    // Drain the manifest from the shared global if the background fetch finished.
+    if let Some(ids) = MANIFEST.lock().unwrap().take() {
+        state.remote_versions = ids;
+    }
 
     let mut open = state.show_install_vanilla;
     egui::Window::new("Install Minecraft (vanilla)")
@@ -207,7 +205,7 @@ fn start_vanilla_download(state: &mut AppState, version: String) {
             *t = msg;
         }
         // Clear the manifest cache so a re-open refreshes.
-        MANIFEST.with(|m| *m.borrow_mut() = None);
+        *MANIFEST.lock().unwrap() = None;
     });
 }
 
@@ -372,26 +370,19 @@ fn install_section(ui: &mut Ui, state: &mut AppState) {
 }
 
 /// Fetch the Mojang manifest in a background thread, storing the version list
-/// into state.remote_versions when done.
+/// into a shared global that the UI picks up.
 fn fetch_manifest_async(state: &AppState) {
     let task = state.task.clone();
-    // Mark that a manifest fetch is in progress via a lightweight running task
-    // only if nothing else is running.
-    let remote_holder = state.task.clone();
     std::thread::spawn(move || {
         match crate::install::vanilla::fetch_manifest() {
             Ok(list) => {
                 let ids: Vec<String> = list.into_iter().map(|(id, _)| id).collect();
-                // Stash the result in a Done task tagged so the UI can read it.
-                // We piggyback on the shared task: set a "manifest loaded" done.
-                if let Ok(mut t) = remote_holder.lock() {
+                *MANIFEST.lock().unwrap() = Some(ids);
+                if let Ok(mut t) = task.lock() {
                     if !t.is_busy() {
-                        *t = Task::Done(format!("__manifest__{}", ids.len()));
+                        *t = Task::Idle;
                     }
                 }
-                // The ids themselves are stored via a thread-local that the UI
-                // picks up; for simplicity we store in a global.
-                MANIFEST.with(|m| *m.borrow_mut() = Some(ids));
             }
             Err(e) => {
                 if let Ok(mut t) = task.lock() {
@@ -404,6 +395,7 @@ fn fetch_manifest_async(state: &AppState) {
     });
 }
 
-thread_local! {
-    static MANIFEST: std::cell::RefCell<Option<Vec<String>>> = std::cell::RefCell::new(None);
-}
+/// Shared slot for the manifest fetched by a background thread and consumed by
+/// the UI thread. Uses a global Mutex (NOT thread_local, which is per-thread).
+static MANIFEST: std::sync::LazyLock<std::sync::Mutex<Option<Vec<String>>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(None));
