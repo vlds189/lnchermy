@@ -24,6 +24,8 @@
 /launcher_profiles.json
 /hs_err_pid*.log
 /crash-reports/
+/screenshots/
+/stats/
 
 # ===== Installer logs (debug artifacts) =====
 /forge-*-installer.jar.log
