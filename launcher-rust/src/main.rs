@@ -38,17 +38,20 @@ fn main() -> eframe::Result {
 
 struct LauncherApp {
     state: state::AppState,
+    /// Tracks whether a task was busy on the previous frame, so we can detect
+    /// when a download/install finishes and rescan the version list.
+    was_busy: bool,
 }
 
 impl LauncherApp {
     fn new() -> Self {
         let mut state = state::AppState::new();
-        // Pre-scan versions so the list is populated on first frame.
         state.rescan_versions();
-        // Kick off a silent background update check. If a newer version exists,
-        // it surfaces in state.update_available for the UI to show.
         check_update_async(&state);
-        LauncherApp { state }
+        LauncherApp {
+            state,
+            was_busy: false,
+        }
     }
 }
 
@@ -91,8 +94,17 @@ impl App for LauncherApp {
             self.state.theme_applied = true;
         }
 
+        // Detect when a background task finishes (busy → idle) and rescan the
+        // installed versions list so newly installed versions appear without
+        // restarting the launcher.
+        let is_busy = self.state.task_snapshot().is_busy();
+        if self.was_busy && !is_busy {
+            self.state.rescan_versions();
+        }
+        self.was_busy = is_busy;
+
         // Keep repainting while a background task runs so progress is visible.
-        if self.state.task_snapshot().is_busy() {
+        if is_busy {
             ctx.request_repaint();
         }
 
