@@ -1,7 +1,7 @@
 // ui/main_view.rs - Main launcher screen: version list, RAM/username, launch button.
 use crate::state::{AppState, Task, APP_VERSION};
 use crate::theme::{ACCENT, ERROR, WARN};
-use egui::{Align, Color32, Layout, RichText, Sense, Ui};
+use egui::{Align, Color32, Layout, RichText, Ui};
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
     // Top bar: title + version + theme toggle + settings gear.
@@ -228,29 +228,14 @@ fn version_list_section(ui: &mut Ui, state: &mut AppState) {
             for v in state.installed_versions.clone() {
                 let tag = AppState::version_tag(&v);
                 let selected = state.selected_version.as_deref() == Some(v.as_str());
-                let resp = ui
-                    .horizontal(|ui| {
-                        let marker = if selected { "▶" } else { "▸" };
-                        let base_color = if selected { ACCENT } else { Color32::GRAY };
-                        ui.label(RichText::new(marker).color(base_color));
-                        ui.add_space(4.0);
-                        ui.label(&v);
-                        if !tag.is_empty() {
-                            ui.add_space(6.0);
-                            ui.label(
-                                RichText::new(tag)
-                                    .small()
-                                    .color(Color32::from_rgb(0x9A, 0x9A, 0x9A)),
-                            );
-                        }
-                    })
-                    .response
-                    .interact(Sense::click());
-                if resp.clicked() {
+                let marker = if selected { "▶ " } else { "  " };
+                let label = if tag.is_empty() {
+                    format!("{marker}{v}")
+                } else {
+                    format!("{marker}{v}  {tag}")
+                };
+                if ui.selectable_label(selected, label).clicked() {
                     state.selected_version = Some(v);
-                }
-                if selected {
-                    resp.highlight();
                 }
             }
         });
