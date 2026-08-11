@@ -20,8 +20,10 @@
 /servers.dat_old
 /usercache.json
 /usernamecache.json
+/supportercache.json
 /launcher_profiles.json
 /hs_err_pid*.log
+/crash-reports/
 
 # ===== Installer logs (debug artifacts) =====
 /forge-*-installer.jar.log
