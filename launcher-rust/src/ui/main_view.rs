@@ -81,6 +81,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     // Forge / OptiFine / Java / Content windows.
     super::install_view::render_windows(ui.ctx(), state);
+
+    // Delete confirmation dialog.
+    if state.pending_delete.is_some() {
+        delete_confirm_window(ui.ctx(), state);
+    }
 }
 
 /// Inline progress bar shown at the bottom of the central panel when a task is
@@ -229,14 +234,24 @@ fn version_list_section(ui: &mut Ui, state: &mut AppState) {
                 let tag = AppState::version_tag(&v);
                 let selected = state.selected_version.as_deref() == Some(v.as_str());
                 let marker = if selected { "▶ " } else { "  " };
-                let label = if tag.is_empty() {
+                let label_text = if tag.is_empty() {
                     format!("{marker}{v}")
                 } else {
                     format!("{marker}{v}  {tag}")
                 };
-                if ui.selectable_label(selected, label).clicked() {
-                    state.selected_version = Some(v);
-                }
+                ui.horizontal(|ui| {
+                    if ui.selectable_label(selected, &label_text).clicked() {
+                        state.selected_version = Some(v.clone());
+                    }
+                    // Delete button
+                    if ui
+                        .button("🗑")
+                        .on_hover_text(format!("Delete {v}"))
+                        .clicked()
+                    {
+                        state.pending_delete = Some(v.clone());
+                    }
+                });
             }
         });
 }
@@ -317,6 +332,46 @@ fn launch_version(state: &mut AppState, version_id: String) {
             *t = msg;
         }
     });
+}
+
+/// Confirmation dialog for deleting a version. Removes the entire
+/// `versions/<id>/` folder (including natives-extracted, .json, .jar).
+fn delete_confirm_window(ctx: &egui::Context, state: &mut AppState) {
+    let ver = state.pending_delete.clone().unwrap_or_default();
+    let mut open = state.pending_delete.is_some();
+    egui::Window::new("Delete version")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.add_space(4.0);
+            ui.label(format!("Вы точно хотите удалить версию {ver}?"));
+            ui.label(
+                RichText::new("Папка versions/ver/ будет удалена полностью (.jar, .json, natives).")
+                    .small()
+                    .color(egui::Color32::GRAY),
+            );
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button("Да, удалить").clicked() {
+                    let dir = state.work_dir.join("versions").join(&ver);
+                    if let Err(e) = std::fs::remove_dir_all(&dir) {
+                        state.set_task(Task::Error(format!("Failed to delete {ver}: {e}")));
+                    } else {
+                        state.set_task(Task::Done(format!("Deleted {ver}")));
+                    }
+                    state.pending_delete = None;
+                    state.rescan_versions();
+                }
+                if ui.button("Отмена").clicked() {
+                    state.pending_delete = None;
+                }
+            });
+        });
+    if !open {
+        state.pending_delete = None;
+    }
 }
 
 fn install_section(ui: &mut Ui, state: &mut AppState) {

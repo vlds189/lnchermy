@@ -82,6 +82,8 @@ pub struct AppState {
     pub forge_custom: String,
     /// Last content-index fetch error message (for the content window).
     pub content_index_error: String,
+    /// Version id pending deletion confirmation (None = no dialog open).
+    pub pending_delete: Option<String>,
 }
 
 impl AppState {
@@ -108,6 +110,7 @@ impl AppState {
             vanilla_filter: String::new(),
             forge_custom: String::new(),
             content_index_error: String::new(),
+            pending_delete: None,
         };
         state
     }
