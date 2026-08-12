@@ -232,6 +232,11 @@ fn version_list_section(ui: &mut Ui, state: &mut AppState) {
         return;
     }
 
+    let game_running = matches!(
+        *state.launch_status.lock().unwrap(),
+        crate::state::LaunchStatus::Running(_)
+    );
+
     egui::ScrollArea::vertical()
         .max_height(160.0)
         .show(ui, |ui| {
@@ -245,18 +250,26 @@ fn version_list_section(ui: &mut Ui, state: &mut AppState) {
                     format!("{marker}{v}  {tag}")
                 };
                 ui.horizontal(|ui| {
-                    if ui.selectable_label(selected, &label_text).clicked() {
+                    // Version label — clicks ignored while game is running.
+                    let label_resp = ui.selectable_label(selected, &label_text);
+                    let label_clicked = label_resp.clicked();
+                    if game_running {
+                        label_resp.on_hover_text("Close the running game first");
+                    }
+                    if label_clicked && !game_running {
                         state.selected_version = Some(v.clone());
-                        // Reset launch status when switching versions.
                         *state.launch_status.lock().unwrap() =
                             crate::state::LaunchStatus::Idle;
                     }
-                    // Delete button
-                    if ui
-                        .button("🗑")
-                        .on_hover_text(format!("Delete {v}"))
-                        .clicked()
-                    {
+                    // Delete button — disabled (grayed out) while game is running.
+                    let del = ui.add_enabled(!game_running, egui::Button::new("🗑"));
+                    let del_clicked = del.clicked();
+                    if game_running {
+                        del.on_disabled_hover_text("Close the running game first");
+                    } else {
+                        del.on_hover_text(format!("Delete {v}"));
+                    }
+                    if del_clicked {
                         state.pending_delete = Some(v.clone());
                     }
                 });
