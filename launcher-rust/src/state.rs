@@ -102,6 +102,8 @@ pub struct AppState {
     pub vanilla_filter: String,
     /// Custom Forge build override text input.
     pub forge_custom: String,
+    /// Custom Java major version text input.
+    pub java_custom: String,
     /// Last content-index fetch error message (for the content window).
     pub content_index_error: String,
     /// Version id pending deletion confirmation (None = no dialog open).
@@ -142,6 +144,7 @@ impl AppState {
             remote_versions: Vec::new(),
             vanilla_filter: String::new(),
             forge_custom: String::new(),
+            java_custom: String::new(),
             content_index_error: String::new(),
             pending_delete: None,
             pending_close_game: false,

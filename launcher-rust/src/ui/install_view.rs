@@ -251,6 +251,7 @@ fn java_window(ctx: &egui::Context, state: &mut AppState) {
             let busy = state.task_snapshot().is_busy();
             ui.label("Choose a Java version to install (portable):");
             ui.add_space(6.0);
+            let mut invalid: Option<String> = None;
             ui.horizontal(|ui| {
                 if ui
                     .add_enabled(!busy, egui::Button::new("Java 21\n(MC 1.20.5+)"))
@@ -274,6 +275,34 @@ fn java_window(ctx: &egui::Context, state: &mut AppState) {
                     start_java_install(state, 8);
                 }
             });
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label("Custom:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut state.java_custom)
+                        .desired_width(50.0)
+                        .hint_text("e.g. 11"),
+                );
+                let valid = !state.java_custom.trim().is_empty()
+                    && state.java_custom.trim().parse::<u32>().map_or(false, |n| (8..=100).contains(&n));
+                let custom_clicked = ui
+                    .add_enabled(!busy && valid, egui::Button::new("Install"))
+                    .clicked();
+                if custom_clicked {
+                    if let Ok(n) = state.java_custom.trim().parse::<u32>() {
+                        state.show_install_java = false;
+                        start_java_install(state, n);
+                    }
+                }
+                if !state.java_custom.trim().is_empty() && !valid {
+                    invalid = Some(
+                        "Any major version 8–100, e.g. 11, 21, 24".into(),
+                    );
+                }
+            });
+            if let Some(msg) = invalid {
+                ui.label(RichText::new(msg).color(crate::theme::ERROR).small());
+            }
         }) {
         super::window_close_cursor(ctx, inner.response.rect);
     }
