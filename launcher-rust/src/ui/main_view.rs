@@ -19,7 +19,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     });
 
     // Side bar: theme toggle + settings (moved out of the top bar).
-    egui::Panel::left("side_panel").exact_size(110.0).show(ui, |ui| {
+    egui::Panel::left("side_panel")
+        .exact_size(110.0)
+        .resizable(false)
+        .show(ui, |ui| {
         ui.add_space(6.0);
         let (icon, hover) = match state.settings.theme {
             crate::settings::Theme::Dark => ("☀", "Switch to light theme"),
