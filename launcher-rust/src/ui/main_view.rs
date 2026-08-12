@@ -18,9 +18,27 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         ui.add_space(4.0);
     });
 
-    // Side bar: theme toggle + settings (moved out of the top bar).
-    egui::Panel::left("side_panel")
-        .exact_size(110.0)
+    // Side bar: icon-only when not hovered, expands to show labels on hover.
+    // Width is animated; the previous frame's rect is remembered via temp data
+    // so hover can be tested before the panel is laid out this frame.
+    let side_id = egui::Id::new("side_panel_anim");
+    let prev_rect = ui
+        .ctx()
+        .data(|d| d.get_temp::<egui::Rect>(side_id))
+        .unwrap_or_else(|| egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(110.0, 200.0)));
+    let hovered = ui
+        .ctx()
+        .pointer_hover_pos()
+        .is_some_and(|p| prev_rect.expand(12.0).contains(p));
+    let target_w = if hovered { 110.0 } else { 42.0 };
+    let side_w = ui.ctx().animate_value_with_time(side_id, target_w, 0.18);
+    if (side_w - target_w).abs() > 0.5 {
+        ui.ctx().request_repaint();
+    }
+    let show_text = side_w > 60.0;
+
+    let side_inner = egui::Panel::left("side_panel")
+        .exact_size(side_w)
         .resizable(false)
         .show(ui, |ui| {
         ui.add_space(6.0);
@@ -28,23 +46,39 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             crate::settings::Theme::Dark => ("☀", "Switch to light theme"),
             crate::settings::Theme::Light => ("🌙", "Switch to dark theme"),
         };
-        if ui
-            .add(egui::Button::new(format!("{icon} Theme")).min_size(egui::vec2(94.0, 0.0)))
-            .on_hover_text(hover)
-            .clicked()
-        {
-            state.settings.theme = state.settings.theme.toggle();
-            crate::theme::apply(ui.ctx(), state.settings.theme);
-            let _ = state.save_settings();
-        }
-        ui.add_space(4.0);
-        if ui
-            .add(egui::Button::new("⚙ Settings").min_size(egui::vec2(94.0, 0.0)))
-            .clicked()
-        {
-            state.show_settings = true;
+        if show_text {
+            if ui
+                .add(egui::Button::new(format!("{icon} Theme")).min_size(egui::vec2(94.0, 0.0)))
+                .on_hover_text(hover)
+                .clicked()
+            {
+                state.settings.theme = state.settings.theme.toggle();
+                crate::theme::apply(ui.ctx(), state.settings.theme);
+                let _ = state.save_settings();
+            }
+            ui.add_space(4.0);
+            if ui
+                .add(egui::Button::new("⚙ Settings").min_size(egui::vec2(94.0, 0.0)))
+                .clicked()
+            {
+                state.show_settings = true;
+            }
+        } else {
+            ui.vertical_centered(|ui| {
+                ui.add_space(2.0);
+                if ui.add(egui::Button::new(icon)).on_hover_text(hover).clicked() {
+                    state.settings.theme = state.settings.theme.toggle();
+                    crate::theme::apply(ui.ctx(), state.settings.theme);
+                    let _ = state.save_settings();
+                }
+                ui.add_space(8.0);
+                if ui.add(egui::Button::new("⚙")).clicked() {
+                    state.show_settings = true;
+                }
+            });
         }
     });
+    ui.ctx().data_mut(|d| d.insert_temp(side_id, side_inner.response.rect));
 
     // Status bar at the bottom mirrors the PowerShell "Press Enter" lines.
     egui::Panel::bottom("status_bar").show(ui, |ui| {
