@@ -5,7 +5,7 @@
 // each time, making bulk downloads (thousands of assets) 10-100x slower.
 
 use std::fs;
-use std::io::Write;
+use std::io;
 use std::path::Path;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -95,19 +95,20 @@ fn download_with_client(
         "{}.part",
         dest.extension().and_then(|e| e.to_str()).unwrap_or("dat")
     ));
-    let resp = client
+    // Large files (e.g. 180 MB JDK zips) easily exceed the client's 30s total
+    // timeout, so override it per-request with a generous limit. The body is
+    // streamed to disk instead of buffered in RAM (resp.bytes() would peak at
+    // >200 MB for a JDK download).
+    let mut resp = client
         .get(url)
+        .timeout(Duration::from_secs(20 * 60))
         .send()
         .map_err(|e| format!("GET {url}: {e}"))?;
     if !resp.status().is_success() {
         return Err(format!("GET {url}: HTTP {}", resp.status()));
     }
-    let bytes = resp
-        .bytes()
-        .map_err(|e| format!("read body {url}: {e}"))?;
     let mut f = fs::File::create(&tmp).map_err(|e| format!("create {}: {e}", tmp.display()))?;
-    f.write_all(&bytes)
-        .map_err(|e| format!("write {}: {e}", tmp.display()))?;
+    io::copy(&mut resp, &mut f).map_err(|e| format!("write {}: {e}", tmp.display()))?;
     f.sync_all().ok();
     drop(f);
     fs::rename(&tmp, dest).map_err(|e| format!("rename {tmp:?} -> {dest:?}: {e}"))?;
