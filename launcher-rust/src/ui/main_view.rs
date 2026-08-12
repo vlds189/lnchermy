@@ -308,10 +308,12 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
                     true,
                 )
             } else {
+                // Always enabled so hover is detected (disabled buttons
+                // don't register hover in egui). Click opens a confirm dialog.
                 (
                     RichText::new(format!("▶  Running: {ver}")).strong(),
                     Some(ACCENT),
-                    false,
+                    true,
                 )
             }
         }
