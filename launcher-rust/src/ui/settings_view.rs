@@ -196,12 +196,20 @@ fn update_section(ui: &mut Ui, state: &mut AppState) {
                 Ok(latest) => {
                     if crate::update::is_newer(&latest, APP_VERSION) {
                         state.update_available = Some(latest.clone());
+                        state.update_msg = Some((
+                            false,
+                            format!("New version available: v{latest}"),
+                        ));
                         state.set_task(Task::Error(format!(
                             "Update available: v{} → v{}. Click 'Install update' below.",
                             APP_VERSION, latest
                         )));
                     } else {
                         state.update_available = None;
+                        state.update_msg = Some((
+                            true,
+                            format!("You are on the latest version (v{APP_VERSION})"),
+                        ));
                         state.set_task(Task::Done(format!(
                             "You are on the latest version (v{}).",
                             APP_VERSION
@@ -209,9 +217,14 @@ fn update_section(ui: &mut Ui, state: &mut AppState) {
                     }
                 }
                 Err(e) => {
+                    state.update_msg = Some((false, format!("Update check failed: {e}")));
                     state.set_task(Task::Error(format!("Update check failed: {e}")));
                 }
             }
+        }
+        if let Some((ok, msg)) = &state.update_msg {
+            let color = if *ok { ACCENT } else { ERROR };
+            ui.label(RichText::new(msg).color(color).small());
         }
         if let Some(latest) = &state.update_available {
             ui.label(RichText::new(format!("New version: v{latest}")).color(ERROR));

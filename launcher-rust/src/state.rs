@@ -79,6 +79,9 @@ pub struct AppState {
     pub installed_versions: Vec<String>,
     /// Last update check result: Some(latest_version_string) if newer than APP_VERSION.
     pub update_available: Option<String>,
+    /// Inline result shown next to the "Check for updates" button.
+    /// (is_success, message) — green text if successful, red otherwise.
+    pub update_msg: Option<(bool, String)>,
     /// Whether the settings screen should be shown.
     pub show_settings: bool,
     /// Internal: whether the theme has been applied to the egui context yet.
@@ -128,6 +131,7 @@ impl AppState {
             selected_version: None,
             installed_versions: Vec::new(),
             update_available: None,
+            update_msg: None,
             show_settings: false,
             theme_applied: false,
             show_install_vanilla: false,
