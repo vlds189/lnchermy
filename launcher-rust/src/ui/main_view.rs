@@ -316,7 +316,7 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
             if state.launch_btn_hovered {
                 // On hover: offer to close the game.
                 (
-                    RichText::new("✕  Close Game").strong(),
+                    RichText::new("✖  Close Game").strong(),
                     Some(ERROR),
                     true,
                 )
