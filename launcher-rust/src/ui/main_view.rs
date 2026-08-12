@@ -1,10 +1,10 @@
 // ui/main_view.rs - Main launcher screen: version list, RAM/username, launch button.
 use crate::state::{AppState, Task, APP_VERSION};
 use crate::theme::{ACCENT, ERROR, WARN};
-use egui::{Align, Color32, Layout, RichText, Ui};
+use egui::{Color32, RichText, Ui};
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
-    // Top bar: title + version + theme toggle + settings gear.
+    // Top bar: title + version.
     egui::Panel::top("top_bar").show(ui, |ui| {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
@@ -14,24 +14,26 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     .small()
                     .color(Color32::GRAY),
             );
-
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.button("⚙ Settings").clicked() {
-                    state.show_settings = true;
-                }
-                let (icon, hover) = match state.settings.theme {
-                    crate::settings::Theme::Dark => ("☀", "Switch to light theme"),
-                    crate::settings::Theme::Light => ("🌙", "Switch to dark theme"),
-                };
-                if ui.button(icon).on_hover_text(hover).clicked() {
-                    state.settings.theme = state.settings.theme.toggle();
-                    crate::theme::apply(ui.ctx(), state.settings.theme);
-                    let _ = state.save_settings();
-                }
-            });
         });
         ui.add_space(4.0);
-        ui.separator();
+    });
+
+    // Side bar: theme toggle + settings (moved out of the top bar).
+    egui::Panel::left("side_panel").exact_size(110.0).show(ui, |ui| {
+        ui.add_space(6.0);
+        let (icon, hover) = match state.settings.theme {
+            crate::settings::Theme::Dark => ("☀", "Switch to light theme"),
+            crate::settings::Theme::Light => ("🌙", "Switch to dark theme"),
+        };
+        if ui.button(icon).on_hover_text(hover).clicked() {
+            state.settings.theme = state.settings.theme.toggle();
+            crate::theme::apply(ui.ctx(), state.settings.theme);
+            let _ = state.save_settings();
+        }
+        ui.add_space(4.0);
+        if ui.button("⚙ Settings").clicked() {
+            state.show_settings = true;
+        }
     });
 
     // Status bar at the bottom mirrors the PowerShell "Press Enter" lines.
