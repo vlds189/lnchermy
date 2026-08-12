@@ -250,12 +250,16 @@ fn version_list_section(ui: &mut Ui, state: &mut AppState) {
                     format!("{marker}{v}  {tag}")
                 };
                 ui.horizontal(|ui| {
-                    // Version label — clicks ignored while game is running.
-                    let label_resp = ui.selectable_label(selected, &label_text);
+                    // Version label — grayed out (no hover) while game runs.
+                    let label_resp = if game_running {
+                        ui.add_enabled(
+                            false,
+                            egui::Button::selectable(selected, &label_text),
+                        )
+                    } else {
+                        ui.add(egui::Button::selectable(selected, &label_text))
+                    };
                     let label_clicked = label_resp.clicked();
-                    if game_running {
-                        label_resp.on_hover_text("Close the running game first");
-                    }
                     if label_clicked && !game_running {
                         state.selected_version = Some(v.clone());
                         *state.launch_status.lock().unwrap() =
