@@ -2,5 +2,6 @@
 # Everything else (game data, PowerShell console) is local-only.
 /*
 !/.gitignore
+!/.opencode/
 !/launcher-rust/
 !/version.json

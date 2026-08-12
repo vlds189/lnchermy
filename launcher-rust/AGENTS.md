@@ -99,3 +99,4 @@ Release profile: `opt-level="z"`, `lto=true`, `strip=true`, `panic="abort"`.
 - **File writes:** use temp file + rename (atomic) pattern from `http::download_file`.
 - **Tests:** unit tests in each module + `tests/real_version.rs` integration tests against real installed versions. Live network tests skip gracefully on failure.
 - **Game folder layout:** everything under the launcher's own directory (self-contained, portable). Same as PowerShell version.
+- **Docs:** per-file documentation lives in `docs/` (mirrors `src/` tree, Russian, change history per file). Keep it fresh when editing code.
