@@ -86,6 +86,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     if state.pending_delete.is_some() {
         delete_confirm_window(ui.ctx(), state);
     }
+
+    // Close game confirmation dialog.
+    if state.pending_close_game {
+        close_game_confirm_window(ui.ctx(), state);
+    }
 }
 
 /// Inline progress bar shown at the bottom of the central panel when a task is
@@ -288,26 +293,29 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
     let no_version = state.selected_version.is_none();
     let task_busy = state.task_snapshot().is_busy();
 
-    // Determine button text, color, and enabled state based on launch status.
-    // On hover in Error state, show normal "Launch" text (using last-frame hover).
-    let show_launch_text = match &launch_status {
-        crate::state::LaunchStatus::Idle | crate::state::LaunchStatus::Launching => true,
-        crate::state::LaunchStatus::Running(_) => false,
-        crate::state::LaunchStatus::Error(_) => state.launch_btn_hovered,
-    };
-
     let (btn_text, btn_bg, enabled) = match &launch_status {
         crate::state::LaunchStatus::Launching => (
             RichText::new("⟳  Launching…").strong(),
             Some(Color32::from_rgb(0xD4, 0xA0, 0x17)),
             false,
         ),
-        crate::state::LaunchStatus::Running(ver) => (
-            RichText::new(format!("▶  Running: {ver}")).strong(),
-            Some(ACCENT),
-            false,
-        ),
-        crate::state::LaunchStatus::Error(_) if !show_launch_text => (
+        crate::state::LaunchStatus::Running(ver) => {
+            if state.launch_btn_hovered {
+                // On hover: offer to close the game.
+                (
+                    RichText::new("✕  Close Game").strong(),
+                    Some(ERROR),
+                    true,
+                )
+            } else {
+                (
+                    RichText::new(format!("▶  Running: {ver}")).strong(),
+                    Some(ACCENT),
+                    false,
+                )
+            }
+        }
+        crate::state::LaunchStatus::Error(_) if !state.launch_btn_hovered => (
             RichText::new("⚠  Error").strong(),
             Some(ERROR),
             true,
@@ -326,9 +334,17 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
     let resp = ui.add_enabled(enabled, btn);
     state.launch_btn_hovered = resp.hovered();
 
-    if resp.clicked() && !no_version {
-        if let Some(v) = state.selected_version.clone() {
-            launch_version(state, v);
+    if resp.clicked() {
+        match &launch_status {
+            crate::state::LaunchStatus::Running(_) => {
+                state.pending_close_game = true;
+            }
+            _ if !no_version => {
+                if let Some(v) = state.selected_version.clone() {
+                    launch_version(state, v);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -376,6 +392,41 @@ fn launch_version(state: &mut AppState, version_id: String) {
             }
         }
     });
+}
+
+/// Confirmation dialog for closing the running game.
+fn close_game_confirm_window(ctx: &egui::Context, state: &mut AppState) {
+    let mut open = true;
+    egui::Window::new("Close game")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.add_space(4.0);
+            ui.label("Вы точно хотите закрыть игру?");
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button("Да, закрыть").clicked() {
+                    let mut guard = state.game_child.lock().unwrap();
+                    if let Some(child) = guard.as_mut() {
+                        let _ = child.kill();
+                        let _ = child.wait(); // reap the process
+                    }
+                    *guard = None;
+                    drop(guard);
+                    *state.launch_status.lock().unwrap() =
+                        crate::state::LaunchStatus::Idle;
+                    state.pending_close_game = false;
+                }
+                if ui.button("Отмена").clicked() {
+                    state.pending_close_game = false;
+                }
+            });
+        });
+    if !open {
+        state.pending_close_game = false;
+    }
 }
 
 /// Confirmation dialog for deleting a version. Removes the entire

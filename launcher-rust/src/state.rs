@@ -103,6 +103,8 @@ pub struct AppState {
     pub content_index_error: String,
     /// Version id pending deletion confirmation (None = no dialog open).
     pub pending_delete: Option<String>,
+    /// Whether the "close game" confirmation dialog is open.
+    pub pending_close_game: bool,
     /// Launch button status (separate from Task — tracks the game process).
     pub launch_status: Arc<Mutex<LaunchStatus>>,
     /// Handle to the running game process (None = no game running).
@@ -138,6 +140,7 @@ impl AppState {
             forge_custom: String::new(),
             content_index_error: String::new(),
             pending_delete: None,
+            pending_close_game: false,
             launch_status: Arc::new(Mutex::new(LaunchStatus::Idle)),
             game_child: Arc::new(Mutex::new(None)),
             launch_btn_hovered: false,
