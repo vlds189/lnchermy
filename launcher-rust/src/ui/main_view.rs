@@ -303,7 +303,7 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
             false,
         ),
         crate::state::LaunchStatus::Running(ver) => (
-            RichText::new(format!("●  Running: {ver}")).strong(),
+            RichText::new(format!("▶  Running: {ver}")).strong(),
             Some(ACCENT),
             false,
         ),
