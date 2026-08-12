@@ -298,7 +298,7 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
 
     let (btn_text, btn_bg, enabled) = match &launch_status {
         crate::state::LaunchStatus::Launching => (
-            RichText::new("⟳  Launching…").strong(),
+            RichText::new("··· Launching…").strong(),
             Some(Color32::from_rgb(0xD4, 0xA0, 0x17)),
             false,
         ),
