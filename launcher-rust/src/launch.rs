@@ -19,7 +19,9 @@ use std::process::Command;
 
 /// Launch outcome.
 pub enum LaunchResult {
-    Ok,
+    /// Game spawned successfully. The Child handle lets the caller track when
+    /// the game process exits.
+    Ok(std::process::Child),
     Failed(String),
 }
 
@@ -67,7 +69,7 @@ pub fn launch(version_id: &str, work_dir: &Path, settings: &Settings) -> LaunchR
     cmd.current_dir(work_dir);
 
     match cmd.spawn() {
-        Ok(_child) => LaunchResult::Ok,
+        Ok(child) => LaunchResult::Ok(child),
         Err(e) => LaunchResult::Failed(format!("Failed to start java: {e}")),
     }
 }
@@ -380,7 +382,7 @@ mod tests {
             theme: crate::settings::Theme::Dark,
         };
         match launch("1.20.1", Path::new(WORK_DIR), &settings) {
-            LaunchResult::Ok => {
+            LaunchResult::Ok(_child) => {
                 // Give the spawned java a moment, then we just trust the OS
                 // reported a successful spawn. The test passing means:
                 //  - java.exe was found

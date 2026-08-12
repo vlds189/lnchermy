@@ -94,16 +94,39 @@ impl App for LauncherApp {
             self.state.theme_applied = true;
         }
 
+        // Poll the running game process: detect when the game exits.
+        {
+            let mut guard = self.state.game_child.lock().unwrap();
+            if let Some(child) = guard.as_mut() {
+                match child.try_wait() {
+                    Ok(Some(_exit_status)) => {
+                        // Game exited — clear handle and reset launch status.
+                        *guard = None;
+                        *self.state.launch_status.lock().unwrap() =
+                            state::LaunchStatus::Idle;
+                    }
+                    Ok(None) => {
+                        // Still running — request repaint so we keep polling.
+                        ctx.request_repaint();
+                    }
+                    Err(_) => {
+                        *guard = None;
+                        *self.state.launch_status.lock().unwrap() =
+                            state::LaunchStatus::Idle;
+                    }
+                }
+            }
+        }
+
         // Detect when a background task finishes (busy → idle) and rescan the
-        // installed versions list so newly installed versions appear without
-        // restarting the launcher.
+        // installed versions list so newly installed versions appear.
         let is_busy = self.state.task_snapshot().is_busy();
         if self.was_busy && !is_busy {
             self.state.rescan_versions();
         }
         self.was_busy = is_busy;
 
-        // Keep repainting while a background task runs so progress is visible.
+        // Keep repainting while a background task runs.
         if is_busy {
             ctx.request_repaint();
         }

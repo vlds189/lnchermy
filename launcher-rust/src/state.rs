@@ -22,6 +22,25 @@ pub enum Task {
     Error(String),
 }
 
+/// Status of the Launch button — separate from Task because the game runs
+/// asynchronously and we need to track it independently.
+#[derive(Debug, Clone)]
+pub enum LaunchStatus {
+    Idle,
+    /// Building command + extracting natives (brief).
+    Launching,
+    /// Game process is running.
+    Running(String),
+    /// Launch failed. Persists until the user changes version or retries.
+    Error(String),
+}
+
+impl Default for LaunchStatus {
+    fn default() -> Self {
+        LaunchStatus::Idle
+    }
+}
+
 impl Task {
     pub fn is_busy(&self) -> bool {
         matches!(self, Task::Running { .. })
@@ -84,6 +103,14 @@ pub struct AppState {
     pub content_index_error: String,
     /// Version id pending deletion confirmation (None = no dialog open).
     pub pending_delete: Option<String>,
+    /// Launch button status (separate from Task — tracks the game process).
+    pub launch_status: Arc<Mutex<LaunchStatus>>,
+    /// Handle to the running game process (None = no game running).
+    /// Polled via try_wait() each frame to detect when the game exits.
+    pub game_child: Arc<Mutex<Option<std::process::Child>>>,
+    /// Tracks whether the launch button was hovered last frame (for showing
+    /// "Launch" text on hover when in Error state).
+    pub launch_btn_hovered: bool,
 }
 
 impl AppState {
@@ -111,6 +138,9 @@ impl AppState {
             forge_custom: String::new(),
             content_index_error: String::new(),
             pending_delete: None,
+            launch_status: Arc::new(Mutex::new(LaunchStatus::Idle)),
+            game_child: Arc::new(Mutex::new(None)),
+            launch_btn_hovered: false,
         };
         state
     }

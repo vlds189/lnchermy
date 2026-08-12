@@ -242,6 +242,9 @@ fn version_list_section(ui: &mut Ui, state: &mut AppState) {
                 ui.horizontal(|ui| {
                     if ui.selectable_label(selected, &label_text).clicked() {
                         state.selected_version = Some(v.clone());
+                        // Reset launch status when switching versions.
+                        *state.launch_status.lock().unwrap() =
+                            crate::state::LaunchStatus::Idle;
                     }
                     // Delete button
                     if ui
@@ -281,22 +284,64 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
 
     ui.add_space(6.0);
 
-    let can_launch = state.selected_version.is_some() && !state.task_snapshot().is_busy();
-    let btn =
-        egui::Button::new(RichText::new("▶  LAUNCH").strong()).min_size(egui::vec2(160.0, 34.0));
-    let resp = ui.add_enabled(can_launch, btn);
-    if resp.clicked() {
+    let launch_status = state.launch_status.lock().unwrap().clone();
+    let no_version = state.selected_version.is_none();
+    let task_busy = state.task_snapshot().is_busy();
+
+    // Determine button text, color, and enabled state based on launch status.
+    // On hover in Error state, show normal "Launch" text (using last-frame hover).
+    let show_launch_text = match &launch_status {
+        crate::state::LaunchStatus::Idle | crate::state::LaunchStatus::Launching => true,
+        crate::state::LaunchStatus::Running(_) => false,
+        crate::state::LaunchStatus::Error(_) => state.launch_btn_hovered,
+    };
+
+    let (btn_text, btn_bg, enabled) = match &launch_status {
+        crate::state::LaunchStatus::Launching => (
+            RichText::new("⟳  Launching…").strong(),
+            Some(Color32::from_rgb(0xD4, 0xA0, 0x17)),
+            false,
+        ),
+        crate::state::LaunchStatus::Running(ver) => (
+            RichText::new(format!("✓  Running: {ver}")).strong(),
+            Some(ACCENT),
+            false,
+        ),
+        crate::state::LaunchStatus::Error(_) if !show_launch_text => (
+            RichText::new("⚠  Error").strong(),
+            Some(ERROR),
+            true,
+        ),
+        _ => (
+            RichText::new("▶  LAUNCH").strong(),
+            None,
+            !no_version && !task_busy,
+        ),
+    };
+
+    let mut btn = egui::Button::new(btn_text).min_size(egui::vec2(200.0, 34.0));
+    if let Some(bg) = btn_bg {
+        btn = btn.fill(bg);
+    }
+    let resp = ui.add_enabled(enabled, btn);
+    state.launch_btn_hovered = resp.hovered();
+
+    if resp.clicked() && !no_version {
         if let Some(v) = state.selected_version.clone() {
-            // Launch Minecraft in the background so the UI stays responsive.
             launch_version(state, v);
         }
     }
-    if !can_launch && state.selected_version.is_none() {
+
+    if no_version {
         ui.label(
             RichText::new("Select a version above to launch.")
                 .small()
                 .color(Color32::GRAY),
         );
+    } else if let crate::state::LaunchStatus::Error(msg) = &launch_status {
+        if !state.launch_btn_hovered {
+            ui.label(RichText::new(msg).small().color(ERROR));
+        }
     }
 }
 
@@ -304,32 +349,31 @@ fn launch_section(_ui: &mut Ui, _state: &mut AppState) {
     // Reserved for future install UI; currently unused.
 }
 
-/// Spawn the Minecraft process for the selected version in a background thread,
-/// so the UI keeps repainting. The result is pushed back into the shared task
-/// state which the status bar reads.
+/// Spawn the Minecraft process for the selected version in a background thread.
+/// Updates launch_status directly (not Task) so the button reflects Running/Error.
 fn launch_version(state: &mut AppState, version_id: String) {
     let settings = state.settings.clone();
     let work_dir = state.work_dir.clone();
-    let task = state.task.clone();
-    state.set_task(Task::Running {
-        title: format!("Launching {version_id}"),
-        steps: Vec::new(),
-        progress_current: 0,
-        progress_total: 0,
-    });
+    let launch_status = state.launch_status.clone();
+    let game_child = state.game_child.clone();
+
+    // Show "Launching…" immediately.
+    *launch_status.lock().unwrap() = crate::state::LaunchStatus::Launching;
 
     std::thread::spawn(move || {
         let result = crate::launch::launch(&version_id, &work_dir, &settings);
-        let msg = match result {
-            crate::launch::LaunchResult::Ok => {
-                Task::Done(format!("Launched {version_id}"))
+        match result {
+            crate::launch::LaunchResult::Ok(child) => {
+                // Store the child handle so the UI loop can detect when it exits.
+                *game_child.lock().unwrap() = Some(child);
+                *launch_status.lock().unwrap() =
+                    crate::state::LaunchStatus::Running(version_id);
             }
             crate::launch::LaunchResult::Failed(e) => {
-                Task::Error(format!("Launch failed: {e}"))
+                let msg = format!("Launch failed: {e}");
+                *launch_status.lock().unwrap() =
+                    crate::state::LaunchStatus::Error(msg);
             }
-        };
-        if let Ok(mut t) = task.lock() {
-            *t = msg;
         }
     });
 }
