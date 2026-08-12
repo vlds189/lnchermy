@@ -28,7 +28,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             crate::settings::Theme::Dark => ("☀", "Switch to light theme"),
             crate::settings::Theme::Light => ("🌙", "Switch to dark theme"),
         };
-        if ui.button(icon).on_hover_text(hover).clicked() {
+        if ui.button(format!("{icon} Theme")).on_hover_text(hover).clicked() {
             state.settings.theme = state.settings.theme.toggle();
             crate::theme::apply(ui.ctx(), state.settings.theme);
             let _ = state.save_settings();
