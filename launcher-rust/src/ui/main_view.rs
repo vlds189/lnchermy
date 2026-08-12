@@ -129,7 +129,7 @@ fn install_vanilla_window(ctx: &egui::Context, state: &mut AppState) {
     }
 
     let mut open = state.show_install_vanilla;
-    egui::Window::new("Install Minecraft (vanilla)")
+    if let Some(inner) = egui::Window::new("Install Minecraft (vanilla)")
         .open(&mut open)
         .resizable(true)
         .default_width(380.0)
@@ -174,7 +174,9 @@ fn install_vanilla_window(ctx: &egui::Context, state: &mut AppState) {
                     start_vanilla_download(state, ver);
                 }
             });
-        });
+        }) {
+        super::window_close_cursor(ctx, inner.response.rect);
+    }
     state.show_install_vanilla = open;
 }
 
@@ -416,7 +418,7 @@ fn launch_version(state: &mut AppState, version_id: String) {
 /// Confirmation dialog for closing the running game.
 fn close_game_confirm_window(ctx: &egui::Context, state: &mut AppState) {
     let mut open = true;
-    egui::Window::new("Close game")
+    if let Some(inner) = egui::Window::new("Close game")
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
@@ -442,7 +444,9 @@ fn close_game_confirm_window(ctx: &egui::Context, state: &mut AppState) {
                     state.pending_close_game = false;
                 }
             });
-        });
+        }) {
+        super::window_close_cursor(ctx, inner.response.rect);
+    }
     if !open {
         state.pending_close_game = false;
     }
@@ -453,7 +457,7 @@ fn close_game_confirm_window(ctx: &egui::Context, state: &mut AppState) {
 fn delete_confirm_window(ctx: &egui::Context, state: &mut AppState) {
     let ver = state.pending_delete.clone().unwrap_or_default();
     let mut open = state.pending_delete.is_some();
-    egui::Window::new("Delete version")
+    if let Some(inner) = egui::Window::new("Delete version")
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
@@ -482,7 +486,9 @@ fn delete_confirm_window(ctx: &egui::Context, state: &mut AppState) {
                     state.pending_delete = None;
                 }
             });
-        });
+        }) {
+        super::window_close_cursor(ctx, inner.response.rect);
+    }
     if !open {
         state.pending_delete = None;
     }

@@ -64,7 +64,7 @@ pub fn render_windows(ctx: &egui::Context, state: &mut AppState) {
 
 fn forge_window(ctx: &egui::Context, state: &mut AppState) {
     let mut open = state.show_install_forge;
-    egui::Window::new("Install Forge")
+    if let Some(inner) = egui::Window::new("Install Forge")
         .open(&mut open)
         .default_width(420.0)
         .default_height(480.0)
@@ -97,7 +97,9 @@ fn forge_window(ctx: &egui::Context, state: &mut AppState) {
                     }
                 }
             });
-        });
+        }) {
+        super::window_close_cursor(ctx, inner.response.rect);
+    }
     state.show_install_forge = open;
 }
 
@@ -155,7 +157,7 @@ fn start_forge_install(state: &mut AppState, mc: String, build: String) {
 
 fn optifine_window(ctx: &egui::Context, state: &mut AppState) {
     let mut open = state.show_install_optifine;
-    egui::Window::new("Install OptiFine")
+    if let Some(inner) = egui::Window::new("Install OptiFine")
         .open(&mut open)
         .default_width(420.0)
         .default_height(440.0)
@@ -187,7 +189,9 @@ fn optifine_window(ctx: &egui::Context, state: &mut AppState) {
                     }
                 }
             });
-        });
+        }) {
+        super::window_close_cursor(ctx, inner.response.rect);
+    }
     state.show_install_optifine = open;
 }
 
@@ -240,7 +244,7 @@ fn start_optifine_install(state: &mut AppState, build: String) {
 
 fn java_window(ctx: &egui::Context, state: &mut AppState) {
     let mut open = state.show_install_java;
-    egui::Window::new("Install Java")
+    if let Some(inner) = egui::Window::new("Install Java")
         .open(&mut open)
         .default_width(360.0)
         .show(ctx, |ui| {
@@ -270,7 +274,9 @@ fn java_window(ctx: &egui::Context, state: &mut AppState) {
                     start_java_install(state, 8);
                 }
             });
-        });
+        }) {
+        super::window_close_cursor(ctx, inner.response.rect);
+    }
     state.show_install_java = open;
 }
 
@@ -304,7 +310,7 @@ fn start_java_install(state: &mut AppState, major: u32) {
 
 fn content_window(ctx: &egui::Context, state: &mut AppState) {
     let mut open = state.show_content;
-    egui::Window::new("Download content")
+    if let Some(inner) = egui::Window::new("Download content")
         .open(&mut open)
         .default_width(420.0)
         .default_height(480.0)
@@ -369,7 +375,9 @@ fn content_window(ctx: &egui::Context, state: &mut AppState) {
                 state.show_content = false;
                 start_content_download(state, mc, cat);
             }
-        });
+        }) {
+        super::window_close_cursor(ctx, inner.response.rect);
+    }
     state.show_content = open;
 }
 

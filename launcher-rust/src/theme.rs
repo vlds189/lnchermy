@@ -27,6 +27,7 @@ pub fn apply(ctx: &Context, theme: Theme) {
     let mut visuals = ctx.style_of(egui_theme).visuals.clone();
     visuals.selection.stroke.color = ACCENT;
     visuals.hyperlink_color = ACCENT;
+    visuals.interact_cursor = Some(egui::CursorIcon::PointingHand);
     ctx.set_visuals_of(egui_theme, visuals);
 
     // Nudge widget style: slightly rounder corners + looser button padding.
