@@ -1,49 +1,6 @@
-# ===== Game data (downloaded at runtime, NOT version-controlled) =====
-# These are ~1.4 GB and recreated by the launcher itself.
-/assets/
-/libraries/
-/versions/
-/installers/
-/jdk-*/
-/mods/
-/resourcepacks/
-/shaderpacks/
-/saves/
-/config/
-/defaultconfigs/
-/logs/
-
-# ===== Minecraft runtime / user files =====
-/options.txt
-/optionsof.txt
-/servers.dat
-/servers.dat_old
-/usercache.json
-/usernamecache.json
-/supportercache.json
-/launcher_profiles.json
-/hs_err_pid*.log
-/crash-reports/
-/screenshots/
-/stats/
-
-# ===== Installer logs (debug artifacts) =====
-/forge-*-installer.jar.log
-
-# ===== User-specific settings (per-machine) =====
-# NOTE: mc_console_settings.json holds RAM/username/index URL per user.
-# Comment out the next line if you DO want to track shared defaults.
-/mc_console_settings.json
-
-# ===== OS / editor cruft =====
-Thumbs.db
-desktop.ini
-.DS_Store
-*.swp
-*~
-
-# ===== Legacy scripts (superseded by mc_console.*) =====
-Asd.bat
-download.ps1
-launcher.ps1
-menu.bat
+# Only the Rust launcher is version-controlled.
+# Everything else (game data, PowerShell console) is local-only.
+/*
+!/.gitignore
+!/launcher-rust/
+!/version.json
