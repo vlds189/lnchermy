@@ -76,6 +76,10 @@ pub fn selector(
     // + scrolling list looks broken). The popup sizes to exactly
     // searchbar + LIST_H + frame margins, so no foreign scrollbar can exist.
     const LIST_H: f32 = 220.0;
+    // Floor for the open popup: it starts as wide as the button, which makes
+    // the search bar and short options look squeezed; long labels can still
+    // grow it further.
+    const POPUP_MIN_W: f32 = 320.0;
 
     // ---- ComboBox-lookalike button (bg + selected text + ▼ icon) ----
     let margin = ui.spacing().button_padding;
@@ -147,7 +151,10 @@ pub fn selector(
             .width(outer_rect.width())
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
-                ui.set_min_width(ui.available_width());
+                // Popup starts as wide as the button; widen the floor so the
+                // search bar and short options don't look squeezed (long
+                // labels still grow it).
+                ui.set_min_width(POPUP_MIN_W);
                 ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
 
                 if loading {
