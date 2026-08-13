@@ -371,6 +371,7 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
     let launch_status = state.launch_status.lock().unwrap().clone();
     let no_version = state.selected_version.is_none();
     let task_busy = state.task_snapshot().is_busy();
+    let launch_version_id = state.selected_version.clone().unwrap_or_default();
 
     let (btn_text, btn_bg, enabled) = match &launch_status {
         crate::state::LaunchStatus::Launching => (
@@ -402,7 +403,7 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
             true,
         ),
         _ => (
-            RichText::new("▶  LAUNCH").strong(),
+            RichText::new(format!("▶  LAUNCH {launch_version_id}")).strong(),
             None,
             !no_version && !task_busy,
         ),
@@ -412,8 +413,15 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
     if let Some(bg) = btn_bg {
         btn = btn.fill(bg);
     }
-    let resp = ui.add_enabled(enabled, btn);
-    state.launch_btn_hovered = resp.hovered();
+
+    let resp = {
+        let row = ui.horizontal(|ui| {
+            let resp = ui.add_enabled(enabled, btn);
+            state.launch_btn_hovered = resp.hovered();
+            resp
+        });
+        row.inner
+    };
 
     if resp.clicked() {
         match &launch_status {
