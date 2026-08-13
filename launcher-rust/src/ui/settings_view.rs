@@ -1,7 +1,7 @@
 // ui/settings_view.rs - Settings screen: RAM, username, content index, theme, update check.
 use crate::settings::{Settings, Theme};
 use crate::state::{AppState, Task, APP_VERSION};
-use crate::theme::{ACCENT, ERROR};
+use crate::theme::{ACCENT, ERROR, INFO};
 use egui::{Align, Color32, Layout, RichText, Ui};
 
 // RAM presets mirror the PowerShell launcher (option 1-5 in Run-Settings).
@@ -200,7 +200,7 @@ fn update_section(ui: &mut Ui, state: &mut AppState) {
                             false,
                             format!("New version available: v{latest}"),
                         ));
-                        state.set_task(Task::Error(format!(
+                        state.set_task(Task::Done(format!(
                             "Update available: v{} → v{}. Click 'Install update' below.",
                             APP_VERSION, latest
                         )));
@@ -223,11 +223,20 @@ fn update_section(ui: &mut Ui, state: &mut AppState) {
             }
         }
         if let Some((ok, msg)) = &state.update_msg {
-            let color = if *ok { ACCENT } else { ERROR };
+            // Update-available is info, not an error: blue while a newer
+            // release exists, green when already up to date, red only for
+            // real failures (which come without `update_available`).
+            let color = if *ok {
+                ACCENT
+            } else if state.update_available.is_some() {
+                INFO
+            } else {
+                ERROR
+            };
             ui.label(RichText::new(msg).color(color).small());
         }
         if let Some(latest) = &state.update_available {
-            ui.label(RichText::new(format!("New version: v{latest}")).color(ERROR));
+            ui.label(RichText::new(format!("New version: v{latest}")).color(INFO));
             if ui.button("Install update & restart").clicked() {
                 // Run update in the background; UI will reflect completion.
                 let task = state.task.clone();

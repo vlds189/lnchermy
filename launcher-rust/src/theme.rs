@@ -8,6 +8,8 @@ pub const ACCENT: Color32 = Color32::from_rgb(0x5A, 0xA8, 0x4A);
 pub const WARN: Color32 = Color32::from_rgb(0xD4, 0xA0, 0x17);
 /// Error red.
 pub const ERROR: Color32 = Color32::from_rgb(0xC0, 0x39, 0x2B);
+/// Informational blue (e.g. "update available") — clearly not an error.
+pub const INFO: Color32 = Color32::from_rgb(0x4A, 0x9E, 0xFF);
 
 /// Apply the selected theme to the egui context.
 ///
