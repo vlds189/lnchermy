@@ -30,12 +30,16 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         .ctx()
         .pointer_hover_pos()
         .is_some_and(|p| prev_rect.expand(12.0).contains(p));
-    let target_w = if hovered { 110.0 } else { 42.0 };
+    // Collapsed width fits the icon button (≈34px) plus an 8px margin on
+    // either side, so the buttons don't press against the panel edge.
+    let target_w = if hovered { 110.0 } else { 52.0 };
     let side_w = ui.ctx().animate_value_with_time(side_id, target_w, 0.18);
     if (side_w - target_w).abs() > 0.5 {
         ui.ctx().request_repaint();
     }
-    let show_text = side_w > 60.0;
+    // Buttons keep constant size while the panel animates: icon-only until the
+    // panel is nearly full, then the label pops in. Same left edge → no shake.
+    let show_text = side_w > 108.0;
 
     let side_inner = egui::Panel::left("side_panel")
         .exact_size(side_w)
@@ -64,18 +68,15 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 state.show_settings = true;
             }
         } else {
-            ui.vertical_centered(|ui| {
-                ui.add_space(2.0);
-                if ui.add(egui::Button::new(icon)).on_hover_text(hover).clicked() {
-                    state.settings.theme = state.settings.theme.toggle();
-                    crate::theme::apply(ui.ctx(), state.settings.theme);
-                    let _ = state.save_settings();
-                }
-                ui.add_space(8.0);
-                if ui.add(egui::Button::new("⚙")).clicked() {
-                    state.show_settings = true;
-                }
-            });
+            if ui.add(egui::Button::new(icon)).on_hover_text(hover).clicked() {
+                state.settings.theme = state.settings.theme.toggle();
+                crate::theme::apply(ui.ctx(), state.settings.theme);
+                let _ = state.save_settings();
+            }
+            ui.add_space(4.0);
+            if ui.add(egui::Button::new("⚙")).clicked() {
+                state.show_settings = true;
+            }
         }
     });
     ui.ctx().data_mut(|d| d.insert_temp(side_id, side_inner.response.rect));
