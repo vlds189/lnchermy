@@ -26,12 +26,17 @@
 - `launch_options_section()`: Launch-кнопка; при hover на Running показывает
   «✖ Close Game» (глиф ✖, а не ✕ — последний отсутствует в шрифтах egui),
   клик открывает confirm-диалог. Кнопка всегда enabled, чтобы ловить hover.
+  В спокойном состоянии текст кнопки — «▶ LAUNCH <версия>»: выбранная версия
+  показывается прямо в кнопке.
 - Модальные окна (vanilla-пикер, delete, close game) обёрнуты в
   `if let Some(inner) = … .show(…)` и вызывают `super::window_close_cursor()`.
 - `MANIFEST` — глобальный `LazyLock<Mutex<Option<Vec<String>>>>` для передачи
   списка версий из фонового потока в UI-поток (НЕ thread_local!).
 
 ## История изменений
+### 2026-08-13 — v3.0.0+
+- Launch-кнопка показывает выбранную версию в тексте: «▶ LAUNCH <версия>».
+
 ### 2026-08-13 — v3.0.0+
 - Выбор версии: список selectable-кнопок → `selector` (ComboBox) с
   searchbar'ом и корзиной в каждой строке; заголовок «Installed versions:».
