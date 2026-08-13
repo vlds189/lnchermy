@@ -61,7 +61,7 @@ Release profile: `opt-level="z"`, `lto=true`, `strip=true`, `panic="abort"`.
 |---|---|
 | `ui/mod.rs` | Routes between main view and settings. |
 | `ui/main_view.rs` | Main screen: version selector, launch options (color-coded Launch button), install buttons, progress overlay, vanilla version picker window, delete confirm dialog. |
-| `ui/selector.rs` | Reusable `selector()` dropdown (ComboBox): optional search bar (`on_search` callback + `search_hint`) and per-option 🗑 delete (`on_delete: Option<FnMut>`); indices map back to caller items by id. |
+| `ui/selector.rs` | Reusable `selector()` dropdown: hand-drawn ComboBox-style button + own `egui::Popup` (ComboBox's internal ScrollArea caused a second scrollbar that scrolled the search bar away). Optional search (`on_search` + `search_hint`), per-option 🗑 delete (`on_delete`), `none_text`, `loading`/`loading_error` states; fixed 220 px list height (`LIST_H`), virtualized rows (`show_rows`). Indices map back to caller items by id. |
 | `ui/settings_view.rs` | RAM presets + custom, username, content index URL, theme toggle, update check. |
 | `ui/install_view.rs` | Forge/OptiFine/Java/Content modal windows. Background fetch via global `LazyLock<Mutex<Option<…>>>` slots. |
 

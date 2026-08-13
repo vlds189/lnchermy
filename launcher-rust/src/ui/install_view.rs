@@ -12,31 +12,82 @@ use std::sync::{LazyLock, Mutex};
 // ------------------------------------------------------------------
 
 #[derive(Clone)]
-struct ForgeData {
-    mc_sorted: Vec<String>,
-    promos: std::collections::HashMap<String, String>,
-    by_mc: std::collections::BTreeMap<String, Vec<String>>,
+pub(crate) struct ForgeData {
+    pub(crate) mc_sorted: Vec<String>,
+    pub(crate) promos: std::collections::HashMap<String, String>,
+    pub(crate) by_mc: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Clone)]
-struct OptiFineData {
-    mc_sorted: Vec<String>,
-    by_mc: std::collections::BTreeMap<String, Vec<String>>,
+pub(crate) struct OptiFineData {
+    pub(crate) mc_sorted: Vec<String>,
+    pub(crate) by_mc: std::collections::BTreeMap<String, Vec<String>>,
 }
 
-static FORGE_SLOT: LazyLock<Mutex<Option<ForgeData>>> = LazyLock::new(|| Mutex::new(None));
-static OPTIFINE_SLOT: LazyLock<Mutex<Option<OptiFineData>>> = LazyLock::new(|| Mutex::new(None));
+// Slots hold `Result`: `Ok` = catalog ready, `Err` = fetch failed (retried
+// with throttling). `None` = fetch in flight or not started.
+static FORGE_SLOT: LazyLock<Mutex<Option<Result<ForgeData, String>>>> =
+    LazyLock::new(|| Mutex::new(None));
+static OPTIFINE_SLOT: LazyLock<Mutex<Option<Result<OptiFineData, String>>>> =
+    LazyLock::new(|| Mutex::new(None));
 static CONTENT_SLOT: LazyLock<Mutex<Option<crate::content::ContentIndex>>> =
     LazyLock::new(|| Mutex::new(None));
 
+// Throttle refetches: only one attempt per 30 s (mostly to keep a failed
+// fetch from spawning a thread every frame, while still auto-retrying).
+static FORGE_LAST_FETCH: LazyLock<Mutex<Option<std::time::Instant>>> =
+    LazyLock::new(|| Mutex::new(None));
+static OPTIFINE_LAST_FETCH: LazyLock<Mutex<Option<std::time::Instant>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+fn fetch_allowed(last: &LazyLock<Mutex<Option<std::time::Instant>>>) -> bool {
+    let now = std::time::Instant::now();
+    let mut guard = last.lock().unwrap();
+    if let Some(t) = *guard {
+        if now.duration_since(t).as_secs() < 30 {
+            return false;
+        }
+    }
+    *guard = Some(now);
+    true
+}
+
 /// Whether Forge metadata has been fetched and is ready to display.
 pub fn forge_data_cached() -> bool {
-    FORGE_SLOT.lock().unwrap().is_some()
+    matches!(*FORGE_SLOT.lock().unwrap(), Some(Ok(_)))
 }
 
 /// Whether OptiFine metadata has been fetched and is ready to display.
 pub fn optifine_data_cached() -> bool {
-    OPTIFINE_SLOT.lock().unwrap().is_some()
+    matches!(*OPTIFINE_SLOT.lock().unwrap(), Some(Ok(_)))
+}
+
+/// Ready Forge catalog, if fetched.
+pub fn forge_catalog() -> Option<ForgeData> {
+    FORGE_SLOT.lock().unwrap().clone().and_then(|r| r.ok())
+}
+
+/// Error of the last Forge fetch attempt, if any.
+pub fn forge_error() -> Option<String> {
+    FORGE_SLOT
+        .lock()
+        .unwrap()
+        .clone()
+        .and_then(|r| r.err())
+}
+
+/// Ready OptiFine catalog, if fetched.
+pub fn optifine_catalog() -> Option<OptiFineData> {
+    OPTIFINE_SLOT.lock().unwrap().clone().and_then(|r| r.ok())
+}
+
+/// Error of the last OptiFine fetch attempt, if any.
+pub fn optifine_error() -> Option<String> {
+    OPTIFINE_SLOT
+        .lock()
+        .unwrap()
+        .clone()
+        .and_then(|r| r.err())
 }
 
 // ------------------------------------------------------------------
@@ -44,14 +95,8 @@ pub fn optifine_data_cached() -> bool {
 // ------------------------------------------------------------------
 
 pub fn render_windows(ctx: &egui::Context, state: &mut AppState) {
-    if state.show_install_forge {
-        forge_window(ctx, state);
-    }
     if state.show_install_java {
         java_window(ctx, state);
-    }
-    if state.show_install_optifine {
-        optifine_window(ctx, state);
     }
     if state.show_content {
         content_window(ctx, state);
@@ -59,68 +104,31 @@ pub fn render_windows(ctx: &egui::Context, state: &mut AppState) {
 }
 
 // ------------------------------------------------------------------
-// Forge
+// Forge catalog (consumed by the combined install selector in main_view)
 // ------------------------------------------------------------------
 
-fn forge_window(ctx: &egui::Context, state: &mut AppState) {
-    let mut open = state.show_install_forge;
-    if let Some(inner) = egui::Window::new("Install Forge")
-        .open(&mut open)
-        .default_width(420.0)
-        .default_height(480.0)
-        .show(ctx, |ui| {
-            let data = FORGE_SLOT.lock().unwrap().clone();
-            let busy = state.task_snapshot().is_busy();
-            let data = match data {
-                Some(d) => d,
-                None => {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label("Fetching Forge versions…");
-                    });
-                    ctx.request_repaint();
-                    return;
-                }
-            };
-            ui.label("Minecraft version (newest first):");
-            let show = data.mc_sorted.len().min(20);
-            egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                for (i, mc) in data.mc_sorted.iter().take(show).enumerate() {
-                    let builds = &data.by_mc[mc];
-                    let default_b =
-                        crate::install::forge::default_build(mc, builds, &data.promos);
-                    let label = format!("{}. {}  ({})", i + 1, mc, default_b);
-                    if ui.add_enabled(!busy, egui::Button::new(label)).clicked() {
-                        state.show_install_forge = false;
-                        start_forge_install(state, mc.clone(), default_b);
-                        return;
-                    }
-                }
-            });
-        }) {
-        super::window_close_cursor(ctx, inner.response.rect);
-    }
-    state.show_install_forge = open;
-}
-
 pub fn fetch_forge_async() {
+    if forge_data_cached() || !fetch_allowed(&FORGE_LAST_FETCH) {
+        return;
+    }
     std::thread::spawn(|| {
-        match crate::install::forge::fetch_metadata() {
-            Ok(by_mc) => {
-                let promos = crate::install::forge::fetch_promos();
-                let mc_sorted = crate::install::forge::sorted_mc_versions(&by_mc);
-                *FORGE_SLOT.lock().unwrap() = Some(ForgeData {
-                    mc_sorted,
-                    promos,
-                    by_mc,
-                });
-            }
-            Err(e) => eprintln!("forge fetch error: {e}"),
+        let result = crate::install::forge::fetch_metadata().and_then(|by_mc| {
+            let promos = crate::install::forge::fetch_promos();
+            let mc_sorted = crate::install::forge::sorted_mc_versions(&by_mc);
+            Ok::<_, String>((ForgeData {
+                mc_sorted,
+                promos,
+                by_mc,
+            },))
+        });
+        match result {
+            Ok((data,)) => *FORGE_SLOT.lock().unwrap() = Some(Ok(data)),
+            Err(e) => *FORGE_SLOT.lock().unwrap() = Some(Err(e)),
         }
     });
 }
 
-fn start_forge_install(state: &mut AppState, mc: String, build: String) {
+pub(crate) fn start_forge_install(state: &mut AppState, mc: String, build: String) {
     let work_dir = state.work_dir.clone();
     let task = state.task.clone();
     state.set_task(Task::Running {
@@ -152,62 +160,26 @@ fn start_forge_install(state: &mut AppState, mc: String, build: String) {
 }
 
 // ------------------------------------------------------------------
-// OptiFine
+// OptiFine catalog (consumed by the combined install selector)
 // ------------------------------------------------------------------
 
-fn optifine_window(ctx: &egui::Context, state: &mut AppState) {
-    let mut open = state.show_install_optifine;
-    if let Some(inner) = egui::Window::new("Install OptiFine")
-        .open(&mut open)
-        .default_width(420.0)
-        .default_height(440.0)
-        .show(ctx, |ui| {
-            let data = OPTIFINE_SLOT.lock().unwrap().clone();
-            let busy = state.task_snapshot().is_busy();
-            let data = match data {
-                Some(d) => d,
-                None => {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label("Fetching OptiFine versions…");
-                    });
-                    ctx.request_repaint();
-                    return;
-                }
-            };
-            ui.label("Minecraft version (newest first):");
-            let show = data.mc_sorted.len().min(20);
-            egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                for (i, mc) in data.mc_sorted.iter().take(show).enumerate() {
-                    let builds = &data.by_mc[mc];
-                    let latest = builds.last().cloned().unwrap_or_default();
-                    let label = format!("{}. {}  ({})", i + 1, mc, latest);
-                    if ui.add_enabled(!busy, egui::Button::new(label)).clicked() {
-                        state.show_install_optifine = false;
-                        start_optifine_install(state, latest);
-                        return;
-                    }
-                }
-            });
-        }) {
-        super::window_close_cursor(ctx, inner.response.rect);
-    }
-    state.show_install_optifine = open;
-}
-
 pub fn fetch_optifine_async() {
+    if optifine_data_cached() || !fetch_allowed(&OPTIFINE_LAST_FETCH) {
+        return;
+    }
     std::thread::spawn(|| {
-        match crate::install::optifine::fetch_versions() {
-            Ok(by_mc) => {
-                let mc_sorted = crate::install::optifine::sorted_mc_versions(&by_mc);
-                *OPTIFINE_SLOT.lock().unwrap() = Some(OptiFineData { mc_sorted, by_mc });
-            }
-            Err(e) => eprintln!("optifine fetch error: {e}"),
+        let result = crate::install::optifine::fetch_versions().map(|by_mc| {
+            let mc_sorted = crate::install::optifine::sorted_mc_versions(&by_mc);
+            OptiFineData { mc_sorted, by_mc }
+        });
+        match result {
+            Ok(data) => *OPTIFINE_SLOT.lock().unwrap() = Some(Ok(data)),
+            Err(e) => *OPTIFINE_SLOT.lock().unwrap() = Some(Err(e)),
         }
     });
 }
 
-fn start_optifine_install(state: &mut AppState, build: String) {
+pub(crate) fn start_optifine_install(state: &mut AppState, build: String) {
     let work_dir = state.work_dir.clone();
     let task = state.task.clone();
     state.set_task(Task::Running {

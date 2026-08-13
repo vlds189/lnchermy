@@ -121,10 +121,8 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     // Progress bar overlay while a background task runs.
     progress_overlay(ui.ctx(), state);
 
-    // Install-vanilla version picker window.
-    if state.show_install_vanilla {
-        install_vanilla_window(ui.ctx(), state);
-    }
+    // Install-vanilla picker is gone: the combined install selector in the
+    // main view lists everything, and picking an item starts the install.
 
     // Forge / OptiFine / Java / Content windows.
     super::install_view::render_windows(ui.ctx(), state);
@@ -166,65 +164,6 @@ fn progress_overlay(ctx: &egui::Context, state: &AppState) {
                 });
             });
     }
-}
-
-/// The version-picker window for installing vanilla Minecraft.
-fn install_vanilla_window(ctx: &egui::Context, state: &mut AppState) {
-    // Drain the manifest from the shared global if the background fetch finished.
-    if let Some(ids) = MANIFEST.lock().unwrap().take() {
-        state.remote_versions = ids;
-    }
-
-    let mut open = state.show_install_vanilla;
-    if let Some(inner) = egui::Window::new("Install Minecraft (vanilla)")
-        .open(&mut open)
-        .resizable(true)
-        .default_width(380.0)
-        .default_height(480.0)
-        .show(ctx, |ui| {
-            if state.remote_versions.is_empty() {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label("Fetching version list from Mojang…");
-                });
-                ui.ctx().request_repaint();
-                return;
-            }
-            ui.label("Filter:");
-            ui.add(
-                egui::TextEdit::singleline(&mut state.vanilla_filter)
-                    .hint_text("e.g. 1.20.1"),
-            );
-            ui.add_space(4.0);
-
-            let busy = state.task_snapshot().is_busy();
-            let filter = state.vanilla_filter.trim().to_ascii_lowercase();
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                let mut to_install: Option<String> = None;
-                for id in &state.remote_versions {
-                    if !filter.is_empty() && !id.to_ascii_lowercase().contains(&filter) {
-                        continue;
-                    }
-                    // Highlight if already installed.
-                    let installed = state.installed_versions.iter().any(|v| v == id);
-                    let label = if installed {
-                        format!("{id}  (installed)")
-                    } else {
-                        id.clone()
-                    };
-                    if ui.add_enabled(!busy, egui::Button::new(label)).clicked() {
-                        to_install = Some(id.clone());
-                    }
-                }
-                if let Some(ver) = to_install {
-                    state.show_install_vanilla = false;
-                    start_vanilla_download(state, ver);
-                }
-            });
-        }) {
-        super::window_close_cursor(ctx, inner.response.rect);
-    }
-    state.show_install_vanilla = open;
 }
 
 /// Start a vanilla download in a background thread, updating the shared task
@@ -332,6 +271,9 @@ fn version_list_section(ui: &mut Ui, state: &mut AppState) {
                 })
                 .collect()
         }),
+        None,
+        None,
+        false,
         None,
     );
 
@@ -565,29 +507,127 @@ fn delete_confirm_window(ctx: &egui::Context, state: &mut AppState) {
 fn install_section(ui: &mut Ui, state: &mut AppState) {
     ui.label(RichText::new("Install").strong());
     ui.add_space(2.0);
+
+    // Drain the manifest produced by the background fetch (Ok only; an error
+    // stays in the slot so `manifest_error()` can surface it).
+    if let Some(Ok(ids)) = MANIFEST.lock().unwrap().take() {
+        state.remote_versions = ids;
+    }
+
+    // One combined catalog: everything installable. Sources are fetched on
+    // demand in the background; while any is missing we show the loader.
+    #[derive(Clone)]
+    enum Choice {
+        Vanilla(String),
+        Forge(String, String),
+        OptiFine(String, String),
+    }
+
     let busy = state.task_snapshot().is_busy();
+    let mut loading = false;
+    let mut error: Option<String> = None;
+
+    if state.remote_versions.is_empty() {
+        loading = true;
+        if let Some(Err(e)) = MANIFEST.lock().unwrap().clone() {
+            error = Some(e);
+        }
+        fetch_manifest_async(state);
+    }
+
+    let forge = super::install_view::forge_catalog();
+    if forge.is_none() {
+        loading = true;
+        if let Some(e) = super::install_view::forge_error() {
+            error = Some(e);
+        }
+        super::install_view::fetch_forge_async();
+    }
+
+    let optifine = super::install_view::optifine_catalog();
+    if optifine.is_none() {
+        loading = true;
+        if let Some(e) = super::install_view::optifine_error() {
+            error = Some(e);
+        }
+        super::install_view::fetch_optifine_async();
+    }
+
+    // Build the catalog: manifest order (newest first), existing installs
+    // marked. No caps — the selector's list is virtualized, so a full
+    // manifest with ~1000 versions renders only the visible rows.
+    let mut choices: Vec<Choice> = Vec::new();
+    let mut items: Vec<super::selector::SelectorItem> = Vec::new();
+    for id in state.remote_versions.clone() {
+        let installed = state.installed_versions.iter().any(|v| v == &id);
+        let label = if installed {
+            format!("Vanilla {id}  (installed)")
+        } else {
+            format!("Vanilla {id}")
+        };
+        choices.push(Choice::Vanilla(id.clone()));
+        items.push((format!("vanilla {id}"), label));
+    }
+    if let Some(fd) = forge {
+        for mc in fd.mc_sorted {
+            let build = crate::install::forge::default_build(&mc, &fd.by_mc[&mc], &fd.promos);
+            choices.push(Choice::Forge(mc.clone(), build.clone()));
+            items.push((
+                format!("forge {mc}"),
+                format!("Forge {mc}  ({build})"),
+            ));
+        }
+    }
+    if let Some(od) = optifine {
+        for mc in od.mc_sorted {
+            let build = od.by_mc[&mc].last().cloned().unwrap_or_default();
+            choices.push(Choice::OptiFine(mc.clone(), build.clone()));
+            items.push((
+                format!("optifine {mc}"),
+                format!("OptiFine {mc}  ({build})"),
+            ));
+        }
+    }
+
+    let mut pick: Option<usize> = None;
+    super::selector::selector(
+        ui,
+        "install_select",
+        &items,
+        &mut pick,
+        !busy,
+        None,
+        Some(&mut |q: &str| {
+            let q = q.to_ascii_lowercase();
+            items
+                .iter()
+                .filter(|(id, label)| {
+                    id.to_ascii_lowercase().contains(&q)
+                        || label.to_ascii_lowercase().contains(&q)
+                })
+                .cloned()
+                .collect()
+        }),
+        Some("Type to filter…"),
+        Some("Install type…"),
+        loading,
+        error.as_deref(),
+    );
+
+    // The pick is transient (not persisted between frames), so act on it here.
+    if let Some(idx) = pick {
+        match &choices[idx] {
+            Choice::Vanilla(ver) => start_vanilla_download(state, ver.clone()),
+            Choice::Forge(mc, build) => {
+                super::install_view::start_forge_install(state, mc.clone(), build.clone())
+            }
+            Choice::OptiFine(_mc, build) => {
+                super::install_view::start_optifine_install(state, build.clone())
+            }
+        }
+    }
+
     ui.horizontal_wrapped(|ui| {
-        if ui.add_enabled(!busy, egui::Button::new("Vanilla")).clicked() {
-            state.show_install_vanilla = true;
-            if state.remote_versions.is_empty() {
-                fetch_manifest_async(state);
-            }
-        }
-        if ui.add_enabled(!busy, egui::Button::new("Forge")).clicked() {
-            state.show_install_forge = true;
-            // Fetch metadata in background if not already cached.
-            let need_fetch = !super::install_view::forge_data_cached();
-            if need_fetch {
-                super::install_view::fetch_forge_async();
-            }
-        }
-        if ui.add_enabled(!busy, egui::Button::new("OptiFine")).clicked() {
-            state.show_install_optifine = true;
-            let need_fetch = !super::install_view::optifine_data_cached();
-            if need_fetch {
-                super::install_view::fetch_optifine_async();
-            }
-        }
         if ui.add_enabled(!busy, egui::Button::new("Java")).clicked() {
             state.show_install_java = true;
         }
@@ -597,15 +637,18 @@ fn install_section(ui: &mut Ui, state: &mut AppState) {
     });
 }
 
-/// Fetch the Mojang manifest in a background thread, storing the version list
-/// into a shared global that the UI picks up.
+/// Fetch the Mojang manifest in a background thread, storing the result (or
+/// error) into a shared global that the UI picks up.
 fn fetch_manifest_async(state: &AppState) {
+    if !manifest_fetch_allowed() {
+        return;
+    }
     let task = state.task.clone();
     std::thread::spawn(move || {
         match crate::install::vanilla::fetch_manifest() {
             Ok(list) => {
                 let ids: Vec<String> = list.into_iter().map(|(id, _)| id).collect();
-                *MANIFEST.lock().unwrap() = Some(ids);
+                *MANIFEST.lock().unwrap() = Some(Ok(ids));
                 if let Ok(mut t) = task.lock() {
                     if !t.is_busy() {
                         *t = Task::Idle;
@@ -613,6 +656,7 @@ fn fetch_manifest_async(state: &AppState) {
                 }
             }
             Err(e) => {
+                *MANIFEST.lock().unwrap() = Some(Err(e.clone()));
                 if let Ok(mut t) = task.lock() {
                     if !t.is_busy() {
                         *t = Task::Error(format!("Manifest fetch failed: {e}"));
@@ -625,5 +669,22 @@ fn fetch_manifest_async(state: &AppState) {
 
 /// Shared slot for the manifest fetched by a background thread and consumed by
 /// the UI thread. Uses a global Mutex (NOT thread_local, which is per-thread).
-static MANIFEST: std::sync::LazyLock<std::sync::Mutex<Option<Vec<String>>>> =
+/// `Err` = last fetch failed (retried after the 30 s throttle window).
+static MANIFEST: std::sync::LazyLock<std::sync::Mutex<Option<Result<Vec<String>, String>>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(None));
+
+/// When the last manifest fetch attempt started (refetch throttle).
+static MANIFEST_LAST_FETCH: std::sync::LazyLock<std::sync::Mutex<Option<std::time::Instant>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(None));
+
+fn manifest_fetch_allowed() -> bool {
+    let now = std::time::Instant::now();
+    let mut guard = MANIFEST_LAST_FETCH.lock().unwrap();
+    if let Some(t) = *guard {
+        if now.duration_since(t).as_secs() < 30 {
+            return false;
+        }
+    }
+    *guard = Some(now);
+    true
+}
