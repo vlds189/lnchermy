@@ -1,4 +1,8 @@
 // main.rs - Entry point. Boots the eframe window and owns AppState.
+// Graphical app: hide the console window on Windows (the default build
+// targets the console subsystem and spawns a black box next to the UI).
+// Note: stderr/stdout "disappear" — use log files if needed later.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 // Dead-code is allowed project-wide: many structs/fields/helpers are wired up
 // progressively across stages and are intentionally retained for later use.
 #![allow(dead_code)]
