@@ -50,14 +50,33 @@ pub fn selector(
         .data(|d| d.get_temp::<String>(query_id))
         .unwrap_or_default();
 
+    // Auto-focus the search bar on the frame the popup transitions closed →
+    // open: memory only reflects the PREVIOUS frame's state, so `was_open`
+    // is false exactly on the opening frame.
+    let popup_id = ui.make_persistent_id(id).with("popup");
+    let was_open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+
+    // Fixed height for the option list: the search bar stays pinned on top and
+    // the list keeps its size when filtering narrows the results (a shrinking
+    // + scrolling list looks broken). Outer ComboBox cap is slightly taller
+    // than searchbar + list so no foreign scrollbar appears.
+    const LIST_H: f32 = 220.0;
+
     egui::ComboBox::from_id_salt(id)
         .selected_text(selected_text)
+        .height(LIST_H + 40.0)
+        // Default CloseOnClick closes the popup on ANY click, including the
+        // search bar; close only on outside clicks and manually on select.
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show_ui(ui, |ui| {
             if on_search.is_some() {
-                ui.add(
+                let search_resp = ui.add(
                     egui::TextEdit::singleline(&mut query)
                         .hint_text(search_hint.unwrap_or("Search…")),
                 );
+                if !was_open {
+                    search_resp.request_focus();
+                }
                 ui.add_space(4.0);
             }
 
@@ -81,7 +100,24 @@ pub fn selector(
                 items.iter().cloned().enumerate().collect()
             };
 
-            for (idx, (item_id, label)) in rows {
+            egui::ScrollArea::vertical()
+                .id_salt(egui::Id::new(id).with("options_scroll"))
+                .max_height(LIST_H)
+                .min_scrolled_height(LIST_H)
+                .show(ui, |ui| {
+                    if rows.is_empty() {
+                        // Keep the fixed height even with zero matches: an
+                        // empty content would otherwise collapse the popup,
+                        // and clearing the search would bounce it back.
+                        ui.set_min_height(LIST_H);
+                        ui.label(
+                            egui::RichText::new("Empty")
+                                .color(egui::Color32::GRAY)
+                                .italics(),
+                        );
+                        return;
+                    }
+                    for (idx, (item_id, label)) in rows {
                 let selected = *selected_idx == Some(idx);
                 ui.horizontal(|ui| {
                     // Grayed out (no hover) while the whole widget is disabled.
@@ -92,6 +128,7 @@ pub fn selector(
                     };
                     if label_resp.clicked() {
                         *selected_idx = Some(idx);
+                        ui.close();
                     }
                     if let Some(cb) = on_delete.as_deref_mut() {
                         let del = if enabled {
@@ -110,7 +147,8 @@ pub fn selector(
                         }
                     }
                 });
-            }
+                    }
+                });
         });
 
     // Persist the query for the next frame while the popup is open.
