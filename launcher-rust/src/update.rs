@@ -92,6 +92,23 @@ pub enum UpdateOutcome {
     UpToDate,
 }
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Set once a fresh binary has been swapped into place. The UI thread polls
+/// this each frame and closes the window, letting the already-spawned new
+/// process take over ("Install update & restart").
+pub static RESTART_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Spawn the swapped-in binary and flag the running instance for exit.
+/// Returns an error if spawning the new process fails.
+pub fn relaunch_after_update(path: &Path) -> Result<(), String> {
+    std::process::Command::new(path)
+        .spawn()
+        .map_err(|e| format!("restart new launcher: {e}"))?;
+    RESTART_PENDING.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
 /// Check for an update and, if one is available, download + swap the binary.
 /// Returns the path the user should re-launch.
 pub fn check_and_update(current_version: &str) -> Result<UpdateOutcome, String> {

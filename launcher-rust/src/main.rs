@@ -92,6 +92,13 @@ impl App for LauncherApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
 
+        // Self-update: a fresh binary has been swapped in and spawned; close
+        // this instance so the new process takes over.
+        if update::RESTART_PENDING.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+
         // Apply the theme once on first frame.
         if !self.state.theme_applied {
             theme::apply(&ctx, self.state.settings.theme);

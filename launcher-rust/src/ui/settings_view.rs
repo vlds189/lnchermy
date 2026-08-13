@@ -240,10 +240,21 @@ fn update_section(ui: &mut Ui, state: &mut AppState) {
                 std::thread::spawn(move || {
                     let result = crate::update::check_and_update(APP_VERSION);
                     let msg = match result {
-                        Ok(crate::update::UpdateOutcome::Updated(path)) => Task::Done(format!(
-                            "Update installed. Restart the launcher ({}) to use it.",
-                            path.display()
-                        )),
+                        Ok(crate::update::UpdateOutcome::Updated(path)) => {
+                            // Restart is part of the button's promise: spawn
+                            // the fresh binary and flag this instance to exit
+                            // (checked each frame in main.rs).
+                            match crate::update::relaunch_after_update(&path) {
+                                Ok(()) => Task::Done(
+                                    "Update installed — restarting…".into(),
+                                ),
+                                Err(e) => Task::Error(format!(
+                                    "Update installed, but restart failed: {e}. \
+                                     Restart the launcher ({}) manually.",
+                                    path.display()
+                                )),
+                            }
+                        }
                         Ok(crate::update::UpdateOutcome::UpToDate) => {
                             Task::Done("Already up to date.".into())
                         }
