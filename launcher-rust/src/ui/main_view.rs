@@ -269,7 +269,7 @@ fn start_vanilla_download(state: &mut AppState, version: String) {
 }
 
 fn version_list_section(ui: &mut Ui, state: &mut AppState) {
-    ui.label(RichText::new("Installed versions").strong());
+    ui.label(RichText::new("Installed versions:").strong());
     ui.add_space(2.0);
 
     if state.installed_versions.is_empty() {
@@ -286,48 +286,61 @@ fn version_list_section(ui: &mut Ui, state: &mut AppState) {
         crate::state::LaunchStatus::Running(_)
     );
 
-    egui::ScrollArea::vertical()
-        .max_height(160.0)
-        .show(ui, |ui| {
-            for v in state.installed_versions.clone() {
-                let tag = AppState::version_tag(&v);
-                let selected = state.selected_version.as_deref() == Some(v.as_str());
-                let marker = if selected { "▶ " } else { "  " };
-                let label_text = if tag.is_empty() {
-                    format!("{marker}{v}")
-                } else {
-                    format!("{marker}{v}  {tag}")
-                };
-                ui.horizontal(|ui| {
-                    // Version label — grayed out (no hover) while game runs.
-                    let label_resp = if game_running {
-                        ui.add_enabled(
-                            false,
-                            egui::Button::selectable(selected, &label_text),
-                        )
+    let items: Vec<super::selector::SelectorItem> = state
+        .installed_versions
+        .iter()
+        .map(|v| {
+            let tag = AppState::version_tag(v);
+            let label = if tag.is_empty() {
+                v.clone()
+            } else {
+                format!("{v}  {tag}")
+            };
+            (v.clone(), label)
+        })
+        .collect();
+
+    let mut sel_idx = state
+        .selected_version
+        .as_deref()
+        .and_then(|sel| state.installed_versions.iter().position(|v| v == sel));
+    let before = sel_idx;
+
+    super::selector::selector(
+        ui,
+        "version_select",
+        &items,
+        &mut sel_idx,
+        !game_running,
+        Some(&mut |_, id| {
+            state.pending_delete = Some(id.to_string());
+        }),
+        Some(&mut |q: &str| {
+            let q = q.to_ascii_lowercase();
+            state
+                .installed_versions
+                .iter()
+                .filter(|v| v.to_ascii_lowercase().contains(&q))
+                .map(|v| {
+                    let tag = AppState::version_tag(v);
+                    let label = if tag.is_empty() {
+                        v.clone()
                     } else {
-                        ui.add(egui::Button::selectable(selected, &label_text))
+                        format!("{v}  {tag}")
                     };
-                    let label_clicked = label_resp.clicked();
-                    if label_clicked && !game_running {
-                        state.selected_version = Some(v.clone());
-                        *state.launch_status.lock().unwrap() =
-                            crate::state::LaunchStatus::Idle;
-                    }
-                    // Delete button — disabled (grayed out) while game is running.
-                    let del = ui.add_enabled(!game_running, egui::Button::new("🗑"));
-                    let del_clicked = del.clicked();
-                    if game_running {
-                        del.on_disabled_hover_text("Close the running game first");
-                    } else {
-                        del.on_hover_text(format!("Delete {v}"));
-                    }
-                    if del_clicked {
-                        state.pending_delete = Some(v.clone());
-                    }
-                });
-            }
-        });
+                    (v.clone(), label)
+                })
+                .collect()
+        }),
+        None,
+    );
+
+    if sel_idx != before {
+        if let Some(idx) = sel_idx {
+            state.selected_version = Some(items[idx].0.clone());
+            *state.launch_status.lock().unwrap() = crate::state::LaunchStatus::Idle;
+        }
+    }
 }
 
 fn launch_options_section(ui: &mut Ui, state: &mut AppState) {

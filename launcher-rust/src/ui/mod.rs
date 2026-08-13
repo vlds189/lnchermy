@@ -1,6 +1,7 @@
 // ui/mod.rs - UI module root. Routes between the main view and settings.
 pub mod install_view;
 pub mod main_view;
+pub mod selector;
 pub mod settings_view;
 
 use crate::state::AppState;

@@ -60,7 +60,8 @@ Release profile: `opt-level="z"`, `lto=true`, `strip=true`, `panic="abort"`.
 | Module | Responsibility |
 |---|---|
 | `ui/mod.rs` | Routes between main view and settings. |
-| `ui/main_view.rs` | Main screen: version list (selectable_label + 🗑 delete), launch options (color-coded Launch button), install buttons, progress overlay, vanilla version picker window, delete confirm dialog. |
+| `ui/main_view.rs` | Main screen: version selector, launch options (color-coded Launch button), install buttons, progress overlay, vanilla version picker window, delete confirm dialog. |
+| `ui/selector.rs` | Reusable `selector()` dropdown (ComboBox): optional search bar (`on_search` callback + `search_hint`) and per-option 🗑 delete (`on_delete: Option<FnMut>`); indices map back to caller items by id. |
 | `ui/settings_view.rs` | RAM presets + custom, username, content index URL, theme toggle, update check. |
 | `ui/install_view.rs` | Forge/OptiFine/Java/Content modal windows. Background fetch via global `LazyLock<Mutex<Option<…>>>` slots. |
 
