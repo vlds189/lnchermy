@@ -30,7 +30,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             });
         });
         ui.add_space(4.0);
-        ui.separator();
+        // No explicit `ui.separator()` here: the top panel already draws its
+        // own edge line (show_separator_line) — an explicit one rendered a
+        // second, stray line right under the header.
     });
 
     egui::CentralPanel::default().show(ui, |ui| {
