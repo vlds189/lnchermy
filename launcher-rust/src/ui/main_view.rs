@@ -1,6 +1,6 @@
 // ui/main_view.rs - Main launcher screen: version list, RAM/username, launch button.
 use crate::state::{AppState, Task, APP_VERSION};
-use crate::theme::{ACCENT, ERROR, WARN};
+use crate::theme::{ACCENT, ERROR, INFO, WARN};
 use egui::{Color32, RichText, Ui};
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
@@ -103,12 +103,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     // Main content.
     egui::CentralPanel::default().show(ui, |ui| {
-        version_list_section(ui, state);
-
-        ui.add_space(10.0);
-        ui.separator();
-        ui.add_space(6.0);
-
         launch_options_section(ui, state);
 
         ui.add_space(10.0);
@@ -207,84 +201,6 @@ fn start_vanilla_download(state: &mut AppState, version: String) {
     });
 }
 
-fn version_list_section(ui: &mut Ui, state: &mut AppState) {
-    ui.label(RichText::new("Installed versions:").strong());
-    ui.add_space(2.0);
-
-    if state.installed_versions.is_empty() {
-        ui.label(
-            RichText::new("No versions found. Install one below (Vanilla / Forge).")
-                .color(Color32::GRAY)
-                .italics(),
-        );
-        return;
-    }
-
-    let game_running = matches!(
-        *state.launch_status.lock().unwrap(),
-        crate::state::LaunchStatus::Running(_)
-    );
-
-    let items: Vec<super::selector::SelectorItem> = state
-        .installed_versions
-        .iter()
-        .map(|v| {
-            let tag = AppState::version_tag(v);
-            let label = if tag.is_empty() {
-                v.clone()
-            } else {
-                format!("{v}  {tag}")
-            };
-            (v.clone(), label)
-        })
-        .collect();
-
-    let mut sel_idx = state
-        .selected_version
-        .as_deref()
-        .and_then(|sel| state.installed_versions.iter().position(|v| v == sel));
-    let before = sel_idx;
-
-    super::selector::selector(
-        ui,
-        "version_select",
-        &items,
-        &mut sel_idx,
-        !game_running,
-        Some(&mut |_, id| {
-            state.pending_delete = Some(id.to_string());
-        }),
-        Some(&mut |q: &str| {
-            let q = q.to_ascii_lowercase();
-            state
-                .installed_versions
-                .iter()
-                .filter(|v| v.to_ascii_lowercase().contains(&q))
-                .map(|v| {
-                    let tag = AppState::version_tag(v);
-                    let label = if tag.is_empty() {
-                        v.clone()
-                    } else {
-                        format!("{v}  {tag}")
-                    };
-                    (v.clone(), label)
-                })
-                .collect()
-        }),
-        None,
-        None,
-        false,
-        None,
-    );
-
-    if sel_idx != before {
-        if let Some(idx) = sel_idx {
-            state.selected_version = Some(items[idx].0.clone());
-            *state.launch_status.lock().unwrap() = crate::state::LaunchStatus::Idle;
-        }
-    }
-}
-
 fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
     ui.label(RichText::new("Launch options").strong());
     ui.add_space(2.0);
@@ -339,6 +255,18 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
                 )
             }
         }
+        _ if state.pending_install.is_some() => {
+            // A version picked in the 🔄 picker that is still missing on
+            // disk: the Launch button turns into the installer for it. Takes
+            // precedence over any stale launch Error — install is the active
+            // intent now.
+            let v = state.pending_install.as_deref().unwrap_or_default();
+            (
+                RichText::new(format!("⬇  Install {v}")).strong(),
+                Some(INFO),
+                !task_busy,
+            )
+        }
         crate::state::LaunchStatus::Error(_) if !state.launch_btn_hovered => (
             RichText::new("⚠  Error").strong(),
             Some(ERROR),
@@ -356,19 +284,38 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
         btn = btn.fill(bg);
     }
 
-    let resp = {
+    // Reload / picker button next to Launch. Uses the 🔄 emoji glyph (present
+    // in egui's bundled NotoEmoji font; verified via cmap). Clicking it
+    // toggles a picker popup anchored below the launch row.
+    let mut reload_clicked = false;
+    let (resp, row_response) = {
         let row = ui.horizontal(|ui| {
             let resp = ui.add_enabled(enabled, btn);
             state.launch_btn_hovered = resp.hovered();
+
+            ui.add_space(6.0);
+            let rresp = ui.add(
+                egui::Button::new("🔄")
+                    .min_size(egui::vec2(34.0, 34.0))
+                    .fill(ACCENT.linear_multiply(0.15)),
+            );
+            reload_clicked = rresp.clicked();
             resp
         });
-        row.inner
+        (row.inner, row.response)
     };
 
     if resp.clicked() {
         match &launch_status {
             crate::state::LaunchStatus::Running(_) => {
                 state.pending_close_game = true;
+            }
+            _ if state.pending_install.is_some() => {
+                // The launch button is in "install" mode: clicking it starts
+                // the download of the version picked in the 🔄 picker.
+                if let Some(v) = state.pending_install.clone() {
+                    start_vanilla_download(state, v);
+                }
             }
             _ if !no_version => {
                 if let Some(v) = state.selected_version.clone() {
@@ -379,9 +326,32 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
         }
     }
 
-    if no_version {
+    // Version picker popup, toggled by the 🔄 button. Anchored to the whole
+    // launch row so it opens right under the launch button. The open state
+    // lives in egui's memory (so it survives repaints); a click on the 🔄
+    // button toggles it, a click anywhere else closes it.
+    let picker_id = egui::Id::new("launch_picker");
+    let toggle = reload_clicked.then_some(egui::SetOpenCommand::Toggle);
+    egui::Popup::new(picker_id, ui.ctx().clone(), &row_response, ui.layer_id())
+        .kind(egui::PopupKind::Menu)
+        .layout(egui::Layout::top_down_justified(egui::Align::Min))
+        .gap(0.0)
+        .open_memory(toggle)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .width(320.0)
+        .show(|ui| {
+            picker_popup_content(ui, state);
+        });
+
+    if let Some(v) = &state.pending_install {
         ui.label(
-            RichText::new("Select a version above to launch.")
+            RichText::new(format!("{v} is not installed yet — clicking above installs it."))
+                .small()
+                .color(INFO),
+        );
+    } else if no_version {
+        ui.label(
+            RichText::new("Pick an installed version with 🔄 to launch.")
                 .small()
                 .color(Color32::GRAY),
         );
@@ -394,6 +364,149 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
 
 fn launch_section(_ui: &mut Ui, _state: &mut AppState) {
     // Reserved for future install UI; currently unused.
+}
+
+/// Content of the 🔄 version picker popup: installed versions first, then
+/// catalog versions that are not installed yet. Picking an installed version
+/// selects it; picking a missing one arms the "Install <version>" mode on
+/// the launch button (stored in `state.pending_install`).
+fn picker_popup_content(ui: &mut Ui, state: &mut AppState) {
+    enum Row {
+        Header(&'static str),
+        Hint(&'static str),
+        Installed(String, String), // label, id
+        Remote(String),            // id
+    }
+
+    ui.set_min_width(320.0);
+    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+
+    // While a game runs, the main version selector is disabled too — picking
+    // a row here must not reset launch_status to Idle under a live process.
+    let game_running = matches!(
+        *state.launch_status.lock().unwrap(),
+        crate::state::LaunchStatus::Running(_)
+    );
+
+    if state.remote_versions.is_empty() {
+        // Catalog not fetched yet: trigger the same background fetch the
+        // install section uses and show a spinner while it loads.
+        if let Some(Err(e)) = MANIFEST.lock().unwrap().clone() {
+            ui.label(
+                egui::RichText::new(format!("⚠ Manifest error: {e}"))
+                    .small()
+                    .color(ERROR),
+            );
+        } else {
+            fetch_manifest_async(state);
+        }
+        ui.set_min_height(120.0);
+        ui.horizontal(|ui| {
+            ui.spinner();
+            ui.label("Loading versions…");
+        });
+        ui.ctx().request_repaint();
+        return;
+    }
+
+    let mut rows: Vec<Row> = Vec::new();
+    rows.push(Row::Header("Installed"));
+    if state.installed_versions.is_empty() {
+        // Empty state: gray hint mirrors the old standalone list message.
+        rows.push(Row::Hint("Nothing installed yet — pick a version below"));
+    }
+    for v in &state.installed_versions {
+        let tag = AppState::version_tag(v);
+        let label = if tag.is_empty() {
+            v.clone()
+        } else {
+            format!("{v}  {tag}")
+        };
+        rows.push(Row::Installed(label, v.clone()));
+    }
+    rows.push(Row::Header("Not installed"));
+    for v in &state.remote_versions {
+        if !state.installed_versions.iter().any(|x| x == v) {
+            rows.push(Row::Remote(v.clone()));
+        }
+    }
+
+    let row_h = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
+    egui::ScrollArea::vertical()
+        .id_salt(egui::Id::new("launch_picker_scroll"))
+        .max_height(260.0)
+        .min_scrolled_height(260.0)
+        .auto_shrink(false)
+        .show_rows(ui, row_h, rows.len(), |ui, range| {
+            for idx in range {
+                match &rows[idx] {
+                    Row::Header(label) => {
+                        ui.add_space(2.0);
+                        ui.label(
+                            egui::RichText::new(*label)
+                                .strong()
+                                .color(egui::Color32::GRAY),
+                        );
+                        ui.add_space(2.0);
+                    }
+                    Row::Hint(label) => {
+                        ui.add_space(2.0);
+                        ui.label(
+                            egui::RichText::new(*label)
+                                .small()
+                                .color(egui::Color32::GRAY)
+                                .italics(),
+                        );
+                        ui.add_space(2.0);
+                    }
+                    Row::Installed(label, id) => {
+                        ui.horizontal(|ui| {
+                            let selected =
+                                state.selected_version.as_deref() == Some(id.as_str());
+                            let resp = if game_running {
+                                ui.add_enabled(
+                                    false,
+                                    egui::Button::selectable(selected, label.clone()),
+                                )
+                            } else {
+                                ui.add(egui::Button::selectable(selected, label.clone()))
+                            };
+                            if resp.clicked() {
+                                state.selected_version = Some(id.clone());
+                                *state.launch_status.lock().unwrap() =
+                                    crate::state::LaunchStatus::Idle;
+                                state.pending_install = None;
+                                ui.close();
+                            }
+                            // Delete button on installed rows only (mirrors the
+                            // old top selector's 🗑). Disabled while a game runs.
+                            let del = if game_running {
+                                ui.add_enabled(false, egui::Button::new("🗑"))
+                            } else {
+                                ui.add(egui::Button::new("🗑"))
+                            };
+                            if del.clicked() {
+                                state.pending_delete = Some(id.clone());
+                                ui.close();
+                            }
+                        });
+                    }
+                    Row::Remote(id) => {
+                        let selected =
+                            state.pending_install.as_deref() == Some(id.as_str());
+                        let resp = if game_running {
+                            ui.add_enabled(false, egui::Button::selectable(selected, id.clone()))
+                        } else {
+                            ui.add(egui::Button::selectable(selected, id.clone()))
+                        };
+                        if resp.clicked() {
+                            state.pending_install = Some(id.clone());
+                            ui.close();
+                        }
+                    }
+                }
+            }
+        });
 }
 
 /// Spawn the Minecraft process for the selected version in a background thread.

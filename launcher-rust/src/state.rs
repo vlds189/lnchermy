@@ -118,6 +118,10 @@ pub struct AppState {
     /// Tracks whether the launch button was hovered last frame (for showing
     /// "Launch" text on hover when in Error state).
     pub launch_btn_hovered: bool,
+    /// Version picked from the 🔄 picker popup that is NOT installed yet.
+    /// While set, the Launch button becomes "Install <version>" instead of
+    /// "LAUNCH". Cleared automatically once the version installs.
+    pub pending_install: Option<String>,
 }
 
 impl AppState {
@@ -151,6 +155,7 @@ impl AppState {
             launch_status: Arc::new(Mutex::new(LaunchStatus::Idle)),
             game_child: Arc::new(Mutex::new(None)),
             launch_btn_hovered: false,
+            pending_install: None,
         };
         state
     }

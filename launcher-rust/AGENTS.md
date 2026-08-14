@@ -17,6 +17,22 @@ cargo test                   # all tests (spawns_java actually launches MC 1.20.
 
 Release profile: `opt-level="z"`, `lto=true`, `strip=true`, `panic="abort"`.
 
+## Handover workflow (mandatory)
+
+Before building `--release` and handing the `.exe` to the user for manual
+verification, ALWAYS self-review the uncommitted diff first:
+
+1. Load the `code-review` skill and run it against `git diff` (plus any new
+   untracked files in `src/`).
+2. Fix the findings it reports; re-run `cargo check` / `cargo test` as needed.
+3. Only then run `cargo build --release` and hand over.
+
+This is enforced mechanically too: the `review-gate` plugin (`.opencode/plugins/`)
+blocks the first `cargo build --release` while the working tree is dirty and
+the diff hash differs from the last reviewed one (`.opencode/review-gate.sha`).
+The retry after the review is the confirmation signal. `cargo check`/`cargo test`
+and reinstalls of an already-approved diff are never blocked.
+
 ## Architecture
 
 ### Entry point

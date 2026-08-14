@@ -134,6 +134,16 @@ impl App for LauncherApp {
         let is_busy = self.state.task_snapshot().is_busy();
         if self.was_busy && !is_busy {
             self.state.rescan_versions();
+            // A version picked in the 🔄 picker just finished installing:
+            // auto-select it and take the launch button out of install mode.
+            if let Some(v) = self.state.pending_install.clone() {
+                if self.state.installed_versions.iter().any(|x| x == &v) {
+                    self.state.selected_version = Some(v);
+                    self.state.pending_install = None;
+                    *self.state.launch_status.lock().unwrap() =
+                        state::LaunchStatus::Idle;
+                }
+            }
         }
         self.was_busy = is_busy;
 
