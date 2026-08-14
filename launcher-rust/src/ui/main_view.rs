@@ -294,11 +294,13 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
             state.launch_btn_hovered = resp.hovered();
 
             ui.add_space(6.0);
-            let rresp = ui.add(
-                egui::Button::new("🔄")
-                    .min_size(egui::vec2(34.0, 34.0))
-                    .fill(ACCENT.linear_multiply(0.15)),
-            );
+            let rresp = ui
+                .add(
+                    egui::Button::new("🔄")
+                        .min_size(egui::vec2(34.0, 34.0))
+                        .fill(ACCENT.linear_multiply(0.15)),
+                )
+                .on_hover_text("Change / Install new version");
             reload_clicked = rresp.clicked();
             resp
         });
@@ -332,6 +334,9 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
     // button toggles it, a click anywhere else closes it.
     let picker_id = egui::Id::new("launch_picker");
     let toggle = reload_clicked.then_some(egui::SetOpenCommand::Toggle);
+    // Memory reflects the PREVIOUS frame's state, so `was_open` is false
+    // exactly on the opening frame — the search bar uses this to autofocus.
+    let was_open = egui::Popup::is_id_open(ui.ctx(), picker_id);
     egui::Popup::new(picker_id, ui.ctx().clone(), &row_response, ui.layer_id())
         .kind(egui::PopupKind::Menu)
         .layout(egui::Layout::top_down_justified(egui::Align::Min))
@@ -340,7 +345,7 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .width(320.0)
         .show(|ui| {
-            picker_popup_content(ui, state);
+            picker_popup_content(ui, state, was_open);
         });
 
     if let Some(v) = &state.pending_install {
@@ -370,9 +375,34 @@ fn launch_section(_ui: &mut Ui, _state: &mut AppState) {
 /// catalog versions that are not installed yet. Picking an installed version
 /// selects it; picking a missing one arms the "Install <version>" mode on
 /// the launch button (stored in `state.pending_install`).
-fn picker_popup_content(ui: &mut Ui, state: &mut AppState) {
+fn picker_popup_content(ui: &mut Ui, state: &mut AppState, was_open: bool) {
+    /// A collapsible section of the picker. Collapse state lives in egui's
+    /// data store (keyed per section) so it survives repaints.
+    #[derive(Clone, Copy)]
+    enum Section {
+        Installed,
+        Remote,
+    }
+    impl Section {
+        fn label(self) -> &'static str {
+            match self {
+                Self::Installed => "Installed",
+                Self::Remote => "Not installed",
+            }
+        }
+        fn collapse_id(self) -> egui::Id {
+            egui::Id::new("launch_picker_section").with(match self {
+                Self::Installed => "installed",
+                Self::Remote => "remote",
+            })
+        }
+        fn is_collapsed(self, ctx: &egui::Context) -> bool {
+            ctx.data(|d| d.get_temp::<bool>(self.collapse_id())).unwrap_or(false)
+        }
+    }
+
     enum Row {
-        Header(&'static str),
+        Header(Section),
         Hint(&'static str),
         Installed(String, String), // label, id
         Remote(String),            // id
@@ -409,27 +439,87 @@ fn picker_popup_content(ui: &mut Ui, state: &mut AppState) {
         return;
     }
 
+    // Search query persists in egui's data store (same pattern as the
+    // selector's search bar): it survives repaints while the popup is open,
+    // and even a close/reopen (data lives in Memory, not in the popup ui).
+    let query_id = egui::Id::new("launch_picker_search");
+    let mut query = ui
+        .ctx()
+        .data(|d| d.get_temp::<String>(query_id))
+        .unwrap_or_default();
+
+    // Search bar pinned above the list; autofocus on the opening frame.
+    let search_resp = ui.add(
+        egui::TextEdit::singleline(&mut query).hint_text("Search versions…"),
+    );
+    if !was_open {
+        search_resp.request_focus();
+    }
+    ui.add_space(4.0);
+
+    let q = query.trim().to_ascii_lowercase();
+    let matches_q = |id: &str| q.is_empty() || id.to_ascii_lowercase().contains(&q);
+
     let mut rows: Vec<Row> = Vec::new();
-    rows.push(Row::Header("Installed"));
-    if state.installed_versions.is_empty() {
-        // Empty state: gray hint mirrors the old standalone list message.
-        rows.push(Row::Hint("Nothing installed yet — pick a version below"));
-    }
+    let mut installed_matches = false;
     for v in &state.installed_versions {
-        let tag = AppState::version_tag(v);
-        let label = if tag.is_empty() {
-            v.clone()
-        } else {
-            format!("{v}  {tag}")
-        };
-        rows.push(Row::Installed(label, v.clone()));
-    }
-    rows.push(Row::Header("Not installed"));
-    for v in &state.remote_versions {
-        if !state.installed_versions.iter().any(|x| x == v) {
-            rows.push(Row::Remote(v.clone()));
+        if matches_q(v) {
+            installed_matches = true;
+            break;
         }
     }
+    // Section collapse state is read once per frame; a click on a header
+    // toggles it in the data store, so the next frame rebuilds without the
+    // section's version rows (headers stay visible to expand back).
+    let installed_collapsed = Section::Installed.is_collapsed(ui.ctx());
+    let remote_collapsed = Section::Remote.is_collapsed(ui.ctx());
+
+    if installed_matches || state.installed_versions.is_empty() {
+        rows.push(Row::Header(Section::Installed));
+        if !installed_collapsed {
+            if state.installed_versions.is_empty() && q.is_empty() {
+                // Empty state: gray hint mirrors the old standalone list message.
+                rows.push(Row::Hint("Nothing installed yet — pick a version below"));
+            }
+            for v in &state.installed_versions {
+                if matches_q(v) {
+                    let tag = AppState::version_tag(v);
+                    let label = if tag.is_empty() {
+                        v.clone()
+                    } else {
+                        format!("{v}  {tag}")
+                    };
+                    rows.push(Row::Installed(label, v.clone()));
+                }
+            }
+        }
+    }
+    let mut remote_matches = false;
+    for v in &state.remote_versions {
+        if !state.installed_versions.iter().any(|x| x == v) && matches_q(v) {
+            remote_matches = true;
+            break;
+        }
+    }
+    if remote_matches {
+        rows.push(Row::Header(Section::Remote));
+        if !remote_collapsed {
+            for v in &state.remote_versions {
+                if !state.installed_versions.iter().any(|x| x == v) && matches_q(v) {
+                    rows.push(Row::Remote(v.clone()));
+                }
+            }
+        }
+    }
+
+    // No matches at all: a bare empty scroll area looks like a bug, so show
+    // a hint (mirrors the selector's "Empty" row).
+    if rows.is_empty() {
+        rows.push(Row::Hint("No versions match the search"));
+    }
+
+    // Persist the query for the next frame while the popup is open.
+    ui.ctx().data_mut(|d| d.insert_temp(query_id, query));
 
     let row_h = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
     egui::ScrollArea::vertical()
@@ -440,14 +530,69 @@ fn picker_popup_content(ui: &mut Ui, state: &mut AppState) {
         .show_rows(ui, row_h, rows.len(), |ui, range| {
             for idx in range {
                 match &rows[idx] {
-                    Row::Header(label) => {
-                        ui.add_space(2.0);
-                        ui.label(
-                            egui::RichText::new(*label)
-                                .strong()
-                                .color(egui::Color32::GRAY),
+                    Row::Header(section) => {
+                        // Clickable section title: a small painter-drawn
+                        // triangle (▼ expanded, ▸ collapsed — egui's default
+                        // fonts lack these glyphs) + the label.
+                        let collapsed = section.is_collapsed(ui.ctx());
+                        let (rect, resp) = ui.allocate_exact_size(
+                            egui::vec2(ui.available_width(), row_h - ui.spacing().item_spacing.y),
+                            egui::Sense::click(),
                         );
-                        ui.add_space(2.0);
+                        if resp.clicked() {
+                            ui.ctx().data_mut(|d| {
+                                d.insert_temp(section.collapse_id(), !collapsed);
+                            });
+                        }
+                        if resp.hovered() {
+                            // Custom widget: real Buttons get a pointing hand
+                            // automatically, this painted header doesn't.
+                            ui.output_mut(|o| {
+                                o.cursor_icon = egui::CursorIcon::PointingHand;
+                            });
+                        }
+                        if ui.is_rect_visible(rect) {
+                            let text_color = if resp.hovered() {
+                                ui.visuals().text_color()
+                            } else {
+                                egui::Color32::GRAY
+                            };
+                            let icon_rect = egui::Rect::from_center_size(
+                                egui::pos2(rect.left() + 12.0, rect.center().y),
+                                egui::vec2(10.0, 8.0),
+                            );
+                            let tri = if collapsed {
+                                // Right-pointing triangle ▸
+                                vec![
+                                    icon_rect.left_top(),
+                                    icon_rect.left_bottom(),
+                                    icon_rect.right_center(),
+                                ]
+                            } else {
+                                // Downward-pointing triangle ▼
+                                vec![
+                                    icon_rect.left_top(),
+                                    icon_rect.right_top(),
+                                    icon_rect.center_bottom(),
+                                ]
+                            };
+                            ui.painter().add(egui::Shape::convex_polygon(
+                                tri,
+                                text_color,
+                                egui::Stroke::NONE,
+                            ));
+                            let galley = ui.painter().layout_no_wrap(
+                                section.label().to_string(),
+                                egui::FontId::proportional(14.0),
+                                text_color,
+                            );
+                            // Vertically center the galley on the row: galley() anchors top-left.
+                            let text_pos = egui::pos2(
+                                rect.left() + 24.0,
+                                rect.center().y - galley.size().y / 2.0,
+                            );
+                            ui.painter().galley(text_pos, galley, text_color);
+                        }
                     }
                     Row::Hint(label) => {
                         ui.add_space(2.0);
