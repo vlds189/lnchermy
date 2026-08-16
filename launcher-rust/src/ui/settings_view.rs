@@ -14,10 +14,31 @@ const RAM_PRESETS: &[(&str, &str, &str)] = &[
 ];
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
+    // The text fields (username, content URL) edit a persistent buffer in
+    // egui's data store, not a per-frame clone. Cloning from settings each
+    // frame made egui force the OLD value back while typing — you could
+    // never erase below 3 chars (the field bounced) and the URL field was
+    // practically uneditable. The buffer is re-seeded on every entry.
+    let open_flag_id = egui::Id::new("settings_was_open");
+    let was_open = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(open_flag_id))
+        .unwrap_or(false);
+    if !was_open {
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(username_edit_id(), state.settings.username.clone());
+            d.insert_temp(url_edit_id(), state.settings.content_index_url.clone());
+        });
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(open_flag_id, true));
+
     egui::Panel::top("settings_top").show(ui, |ui| {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             if ui.button("‹ Back").clicked() {
+                // Leaving settings: forget the text buffers so the next visit
+                // re-seeds them from the saved values (see render()).
+                ui.ctx().data_mut(|d| d.insert_temp(open_flag_id, false));
                 state.show_settings = false;
             }
             ui.heading(RichText::new("Settings").color(ACCENT).strong());
@@ -113,43 +134,65 @@ fn memory_section(ui: &mut Ui, state: &mut AppState) {
     });
 }
 
+const USERNAME_HINT: &str = "3–16 chars, letters / numbers / underscore";
+
+fn username_edit_id() -> egui::Id {
+    egui::Id::new("settings_username_edit")
+}
+
 fn username_section(ui: &mut Ui, state: &mut AppState) {
     ui.label(RichText::new("In-game username").strong());
     ui.add_space(2.0);
-    let mut name = state.settings.username.clone();
+    // Persistent edit buffer (seeded each time settings is opened): the
+    // widget edits this string frame-to-frame, so the user's text is never
+    // overwritten by the old saved value mid-edit.
+    let mut name = ui
+        .ctx()
+        .data(|d| d.get_temp::<String>(username_edit_id()))
+        .unwrap_or_default();
     let resp = egui::TextEdit::singleline(&mut name)
         .desired_width(180.0)
         .show(ui)
         .response;
-    ui.label(
-        RichText::new("3–16 chars, letters / numbers / underscore")
-            .small()
-            .color(Color32::GRAY),
-    );
+    ui.ctx().data_mut(|d| d.insert_temp(username_edit_id(), name.clone()));
+    ui.label(RichText::new(USERNAME_HINT).small().color(Color32::GRAY));
     if resp.lost_focus() {
         let trimmed = name.trim();
-        if trimmed != state.settings.username && Settings::is_valid_username(trimmed) {
-            state.settings.username = trimmed.to_string();
-            let _ = state.save_settings();
-        } else if !trimmed.is_empty() && !Settings::is_valid_username(trimmed) {
+        if Settings::is_valid_username(trimmed) {
+            if trimmed != state.settings.username {
+                state.settings.username = trimmed.to_string();
+                let _ = state.save_settings();
+            }
+        } else if !trimmed.is_empty() {
+            // Bad length/characters: keep the field editable and just
+            // surface the validation error.
             state.set_task(Task::Error("Invalid username: 3–16 chars, A-Z a-z 0-9 _".into()));
-        }
-    } else if resp.changed() {
-        // Allow live editing but only persist valid values.
-        if Settings::is_valid_username(name.trim()) || name.trim().is_empty() {
-            state.settings.username = name.trim().to_string();
+        } else {
+            // Cleared the whole field: an empty nick is not launchable, so
+            // put the last saved name back into the edit buffer.
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(username_edit_id(), state.settings.username.clone());
+            });
         }
     }
+}
+
+fn url_edit_id() -> egui::Id {
+    egui::Id::new("settings_url_edit")
 }
 
 fn content_index_section(ui: &mut Ui, state: &mut AppState) {
     ui.label(RichText::new("Content index URL (mods / resourcepacks / shaders)").strong());
     ui.add_space(2.0);
-    let mut url = state.settings.content_index_url.clone();
+    let mut url = ui
+        .ctx()
+        .data(|d| d.get_temp::<String>(url_edit_id()))
+        .unwrap_or_default();
     let resp = egui::TextEdit::singleline(&mut url)
         .desired_width(420.0)
         .show(ui)
         .response;
+    ui.ctx().data_mut(|d| d.insert_temp(url_edit_id(), url.clone()));
     ui.label(
         RichText::new("Direct/raw link to your index JSON, e.g. https://raw.githubusercontent.com/.../index.json")
             .small()

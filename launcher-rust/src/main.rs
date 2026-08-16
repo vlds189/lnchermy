@@ -24,7 +24,47 @@ mod versions;
 
 use eframe::App;
 
+/// Install a panic hook that dumps panic details to `crash.log` next to the
+/// executable. Release builds use `panic = "abort"` and hide the console
+/// (windows_subsystem), so a panic in any thread silently kills the whole
+/// launcher with no trace left behind. The hook still runs just before abort,
+/// turning the next crash into a diagnosable file: thread name, message,
+/// source location and backtrace.
+fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let thread = std::thread::current();
+        let thread_name = thread.name().unwrap_or("<unnamed>").to_string();
+        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            (*s).to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "<non-string panic payload>".to_string()
+        };
+        let location = info
+            .location()
+            .map(|l| l.to_string())
+            .unwrap_or_else(|| "<unknown>".to_string());
+        let text = format!(
+            "Panic on thread [{thread_name}] at {location}:\n{payload}\n\nBacktrace:\n{}\n",
+            std::backtrace::Backtrace::force_capture()
+        );
+        // The launcher is self-contained — the log lands next to the exe,
+        // i.e. in the user's game folder.
+        if let Some(exe_dir) = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        {
+            if let Err(e) = std::fs::write(exe_dir.join("crash.log"), &text) {
+                eprintln!("failed to write crash.log: {e}");
+            }
+        }
+        eprintln!("{text}");
+    }));
+}
+
 fn main() -> eframe::Result {
+    install_panic_hook();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([560.0, 600.0])
