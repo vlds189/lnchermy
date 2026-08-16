@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 /// Launcher version, bumped per release. Matches version.json in the repo.
-pub const APP_VERSION: &str = "3.0.7";
+pub const APP_VERSION: &str = "3.0.8";
 
 /// What the launcher is currently doing. Drives the UI (idle vs progress vs error).
 #[derive(Debug, Clone, Default)]
