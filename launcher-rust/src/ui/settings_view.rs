@@ -158,9 +158,9 @@ fn username_section(ui: &mut Ui, state: &mut AppState) {
     ui.ctx().data_mut(|d| d.insert_temp(username_edit_id(), name.clone()));
     ui.label(RichText::new(USERNAME_HINT).small().color(Color32::GRAY));
     // NB: clearing via the field's ✖ (ui/input.rs) blurs the edit for a
-    // frame, so this lost_focus handler may fire mid-clear — it saves the
-    // typed text if valid, or restores the saved name when empty. The end
-    // state after the ✖ click completes is still correct (empty, focused).
+    // frame, so this lost_focus handler fires mid-clear. An empty name is
+    // therefore left alone: nothing is persisted, the launch keeps using the
+    // last saved nick, and re-opening settings re-seeds the buffer from it.
     if resp.lost_focus() {
         let trimmed = name.trim();
         if Settings::is_valid_username(trimmed) {
@@ -172,12 +172,6 @@ fn username_section(ui: &mut Ui, state: &mut AppState) {
             // Bad length/characters: keep the field editable and just
             // surface the validation error.
             state.set_task(Task::Error("Invalid username: 3–16 chars, A-Z a-z 0-9 _".into()));
-        } else {
-            // Cleared the whole field: an empty nick is not launchable, so
-            // put the last saved name back into the edit buffer.
-            ui.ctx().data_mut(|d| {
-                d.insert_temp(username_edit_id(), state.settings.username.clone());
-            });
         }
     }
 }

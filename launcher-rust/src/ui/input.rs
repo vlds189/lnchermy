@@ -14,14 +14,12 @@ const CLEAR_PAD: f32 = 10.0;
 const CLEAR_SIZE: f32 = 16.0;
 
 /// Pure visibility rule, split out for tests: the cross shows only when
-/// there is something to clear AND the input "family" holds keyboard focus.
-///
-/// `any_focus` must include the CLEAR button's own focus: pressing the cross
-/// transfers focus from the TextEdit to the cross widget (egui focuses any
-/// clicked widget). If visibility only tracked the edit, the cross would
-/// vanish on mouse-DOWN — before the click completes — and never fire.
-fn show_clear_button(buf: &str, any_focus: bool) -> bool {
-    !buf.is_empty() && any_focus
+/// there is something to clear. Visibility deliberately does NOT depend on
+/// keyboard focus — pressing the cross moves focus to it (egui focuses any
+/// clicked widget), so a focus-gated cross would vanish on mouse-DOWN, a
+/// frame before the click completes, and the release would hit nothing.
+fn show_clear_button(buf: &str) -> bool {
+    !buf.is_empty()
 }
 
 /// One-line text input with a clear (✖) button at the right edge.
@@ -96,10 +94,7 @@ impl<'a> TextInput<'a> {
         // The cross id derives from the edit's actual id, so two inputs on
         // the same screen never share cross state.
         let clear_id = edit_resp.id.with("input_clear");
-        // Focus check goes through egui memory (not a Response) because the
-        // cross widget only EXISTS while visible — see show_clear_button.
-        let clear_focused = ui.ctx().memory(|m| m.has_focus(clear_id));
-        if !show_clear_button(buf, edit_resp.has_focus() || clear_focused) {
+        if !show_clear_button(buf) {
             return edit_resp;
         }
 
@@ -113,7 +108,7 @@ impl<'a> TextInput<'a> {
         let clear_resp = ui.interact(rect, clear_id, Sense::click());
 
         // Subtle: paint the hover pill BEFORE the glyph so the ✖ stays on top.
-        let hovered = clear_resp.hovered() || clear_focused;
+        let hovered = clear_resp.hovered();
         if hovered {
             ui.painter().rect(
                 rect.shrink(1.0),
@@ -166,14 +161,13 @@ mod tests {
 
     #[test]
     fn clear_button_visibility_rule() {
-        // Nothing typed → never shown, even when focused.
-        assert!(!show_clear_button("", true));
-        // Typed but not focused → hidden (requirement: field must be focused).
-        assert!(!show_clear_button("abc", false));
-        // Typed + focused (edit OR the cross itself) → shown.
-        assert!(show_clear_button("abc", true));
+        // Nothing typed → never shown.
+        assert!(!show_clear_button(""));
+        // Typed → shown (no focus requirement: a focus-gated cross would
+        // vanish mid-press and the click would never complete).
+        assert!(show_clear_button("abc"));
         // Whitespace-only still counts as "something entered".
-        assert!(show_clear_button("  ", true));
+        assert!(show_clear_button("  "));
     }
 
     /// Builder must produce the same values a plain TextEdit call would.
@@ -193,5 +187,82 @@ mod tests {
         assert_eq!(w.desired_width, 180.0);
         assert_eq!(w.hint.as_deref(), Some("Search…"));
         assert_eq!(w.id, Some(egui::Id::new("x")));
+    }
+
+    /// Full pointer-driven reproduction: focus the edit, hover the cross,
+    /// press + release the primary button over it. The buffer must be
+    /// cleared and focus handed back to the edit. This test exists because
+    /// exactly this flow was reported broken in the real app — egui's
+    /// hit-testing and focus transfer are exercised for real via synthetic
+    /// RawInput events (egui 0.36 API: `run_ui`, tuple `PointerMoved`).
+    #[test]
+    fn clear_click_clears_buffer_via_pointer() {
+        let ctx = egui::Context::default();
+        let mut buf = "hello".to_owned();
+        let edit_id = egui::Id::new("t");
+        let cross_id = edit_id.with("input_clear");
+
+        let render = |ui: &mut egui::Ui, buf: &mut String, focus_edit: bool| {
+            egui::CentralPanel::default().show(ui, |ui| {
+                let resp = ui.add(TextInput::new(buf).id(edit_id));
+                if focus_edit {
+                    resp.request_focus();
+                }
+            });
+        };
+
+        // Off-screen tests have no renderer to submit the texture delta to,
+        // so egui's FullOutput would panic on drop — drop it explicitly.
+        let mut frame = |input: egui::RawInput, buf: &mut String, focus_edit: bool| {
+            let mut out = ctx.run_ui(input, |ui| render(ui, buf, focus_edit));
+            out.textures_delta.clear();
+        };
+
+        // Frame 1: render once, then focus the edit (focus takes effect for
+        // the next frame; request it in the same frame as creation).
+        frame(egui::RawInput::default(), &mut buf, true);
+
+        // Locate the cross from the edit's rect (same geometry as show()).
+        let edit_rect = ctx.read_response(edit_id).expect("edit response").rect;
+        let cross_pos = egui::pos2(edit_rect.right() - CLEAR_PAD, edit_rect.center().y);
+
+        let pointer = |pressed: bool| egui::Event::PointerButton {
+            pos: cross_pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        };
+        let input = |events: Vec<egui::Event>| egui::RawInput {
+            events,
+            ..Default::default()
+        };
+
+        // Frame 2: move the pointer over the cross.
+        frame(input(vec![egui::Event::PointerMoved(cross_pos)]), &mut buf, false);
+        let cross = ctx.read_response(cross_id);
+        assert!(cross.is_some(), "cross must be visible while text non-empty");
+        assert!(
+            cross.as_ref().is_some_and(|c| c.hovered()),
+            "cross must be hovered after pointer move"
+        );
+
+        // Frame 3: press the primary button on the cross.
+        frame(input(vec![pointer(true)]), &mut buf, false);
+        let cross = ctx.read_response(cross_id);
+        assert!(
+            cross.as_ref().is_some_and(|c| c.is_pointer_button_down_on()),
+            "cross must catch the press"
+        );
+
+        // Frame 4: release → the click must clear the buffer.
+        frame(input(vec![pointer(false)]), &mut buf, false);
+        assert!(buf.is_empty(), "buffer must be cleared after the click, got {buf:?}");
+
+        // Frame 5: egui's `request_focus` takes effect from the next frame —
+        // the edit must be focused again (and stay clear).
+        frame(egui::RawInput::default(), &mut buf, false);
+        assert!(buf.is_empty(), "buffer must stay cleared, got {buf:?}");
+        let edit = ctx.read_response(edit_id).expect("edit response");
+        assert!(edit.has_focus(), "focus must return to the edit after clearing");
     }
 }
