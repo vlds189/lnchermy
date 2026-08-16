@@ -74,6 +74,101 @@ pub fn launch(version_id: &str, work_dir: &Path, settings: &Settings) -> LaunchR
     }
 }
 
+/// Offline player UUID — byte-identical to Java's
+/// `UUID.nameUUIDFromBytes(("OfflinePlayer:" + name).getBytes(UTF_8))`, i.e.
+/// an RFC 4122 v3 (name-based, MD5) UUID. Vanilla offline servers and LAN
+/// worlds identify players by exactly this value, and the client picks the
+/// default skin from `DEFAULT_SKINS[floorMod(uuid.hashCode(), 18)]` — so a
+/// per-name UUID gives every nickname its own stable default skin. (A
+/// hardcoded zero UUID always hashed to index 0 = slim/alex: the
+/// "female skin regardless of nick" bug.)
+pub fn offline_uuid(name: &str) -> String {
+    let mut h = md5(format!("OfflinePlayer:{name}").as_bytes());
+    // nameUUIDFromBytes pins the version (3) and IETF variant nibbles.
+    h[6] = (h[6] & 0x0f) | 0x30;
+    h[8] = (h[8] & 0x3f) | 0x80;
+    let hex: String = h.iter().map(|b| format!("{b:02x}")).collect();
+    format!(
+        "{}-{}-{}-{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..32]
+    )
+}
+
+/// Minimal MD5 (RFC 1321). Needed only for the 16-byte offline-UUID digest
+/// above — same "inline hash, no extra crate" approach as SHA-1 in
+/// install/vanilla.rs.
+fn md5(msg: &[u8]) -> [u8; 16] {
+    // Per-round shift amounts.
+    const S: [u32; 64] = [
+        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20,
+        5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+        6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+    ];
+    // K[i] = floor(|sin(i+1)| * 2^32), the standard T table.
+    const K: [u32; 64] = [
+        0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613,
+        0xfd469501, 0x698098d8, 0x8b44f7af, 0xffff5bb1, 0x895cd7be, 0x6b901122, 0xfd987193,
+        0xa679438e, 0x49b40821, 0xf61e2562, 0xc040b340, 0x265e5a51, 0xe9b6c7aa, 0xd62f105d,
+        0x02441453, 0xd8a1e681, 0xe7d3fbc8, 0x21e1cde6, 0xc33707d6, 0xf4d50d87, 0x455a14ed,
+        0xa9e3e905, 0xfcefa3f8, 0x676f02d9, 0x8d2a4c8a, 0xfffa3942, 0x8771f681, 0x6d9d6122,
+        0xfde5380c, 0xa4beea44, 0x4bdecfa9, 0xf6bb4b60, 0xbebfbc70, 0x289b7ec6, 0xeaa127fa,
+        0xd4ef3085, 0x04881d05, 0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665, 0xf4292244,
+        0x432aff97, 0xab9423a7, 0xfc93a039, 0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1,
+        0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb,
+        0xeb86d391,
+    ];
+
+    let mut a0: u32 = 0x6745_2301;
+    let mut b0: u32 = 0xefcd_ab89;
+    let mut c0: u32 = 0x98ba_dcfe;
+    let mut d0: u32 = 0x1032_5476;
+
+    // Pad: 0x80, zeros to 56 mod 64, then the bit length as LE u64.
+    let mut data = msg.to_vec();
+    data.push(0x80);
+    while data.len() % 64 != 56 {
+        data.push(0);
+    }
+    data.extend_from_slice(&((msg.len() as u64) * 8).to_le_bytes());
+
+    for chunk in data.chunks_exact(64) {
+        let mut m = [0u32; 16];
+        for (i, w) in m.iter_mut().enumerate() {
+            *w = u32::from_le_bytes(chunk[i * 4..i * 4 + 4].try_into().unwrap());
+        }
+        let (mut a, mut b, mut c, mut d) = (a0, b0, c0, d0);
+        for i in 0..64 {
+            let (f, g) = match i / 16 {
+                0 => ((b & c) | (!b & d), i),
+                1 => ((d & b) | (!d & c), (5 * i + 1) % 16),
+                2 => (b ^ c ^ d, (3 * i + 5) % 16),
+                _ => (c ^ (b | !d), (7 * i) % 16),
+            };
+            let tmp = d;
+            d = c;
+            c = b;
+            let sum = a.wrapping_add(f).wrapping_add(K[i]).wrapping_add(m[g]);
+            b = b.wrapping_add(sum.rotate_left(S[i]));
+            a = tmp;
+        }
+        a0 = a0.wrapping_add(a);
+        b0 = b0.wrapping_add(b);
+        c0 = c0.wrapping_add(c);
+        d0 = d0.wrapping_add(d);
+    }
+
+    let mut out = [0u8; 16];
+    out[0..4].copy_from_slice(&a0.to_le_bytes());
+    out[4..8].copy_from_slice(&b0.to_le_bytes());
+    out[8..12].copy_from_slice(&c0.to_le_bytes());
+    out[12..16].copy_from_slice(&d0.to_le_bytes());
+    out
+}
+
 /// Build the full argument vector for a version WITHOUT spawning java.
 /// Useful for testing the assembly logic and for displaying the command.
 /// Returns (java_exe_path, all_args, main_class, classpath, natives_dir).
@@ -153,7 +248,7 @@ pub fn build_command(
     vars.insert("game_directory".into(), work_dir.to_string_lossy().to_string());
     vars.insert("assets_root".into(), assets_root.clone());
     vars.insert("assets_index_name".into(), asset_index.clone());
-    vars.insert("auth_uuid".into(), "00000000-0000-0000-0000-000000000000".into());
+    vars.insert("auth_uuid".into(), offline_uuid(&settings.username));
     vars.insert("auth_access_token".into(), "0".into());
     vars.insert("clientid".into(), "00000000-0000-0000-0000-000000000000".into());
     vars.insert("auth_xuid".into(), "0".into());
@@ -234,6 +329,44 @@ mod tests {
         assert_eq!(resolve_placeholders("${x}", &vars), "1");
     }
 
+    // ---- offline player UUID (default-skin-per-nickname fix) ----
+
+    /// Ground truth: these UUIDs were computed by Minecraft itself for
+    /// offline LAN players and cached in the game folder's usercache.json.
+    #[test]
+    fn offline_uuid_matches_vanilla() {
+        assert_eq!(offline_uuid("Kepler"), "00551003-7c65-3a9d-94dd-33e9387cc53f");
+        assert_eq!(offline_uuid("Player"), "a01e3843-e521-3998-958a-f459800e4d11");
+        assert_eq!(offline_uuid("Player1"), "681f539b-8bb8-3f85-85e5-a2945f6c6539");
+        assert_eq!(offline_uuid("Vlad"), "c5ac6b65-aeae-3786-98d1-60ad333907ec");
+    }
+
+    #[test]
+    fn offline_uuid_shape_and_uniqueness() {
+        let u = offline_uuid("Steve");
+        assert_eq!(u.len(), 36);
+        let parts: Vec<&str> = u.split('-').collect();
+        assert_eq!(parts.len(), 5);
+        // RFC 4122 v3 (name-based, MD5) + IETF variant, exactly what
+        // UUID.nameUUIDFromBytes produces.
+        assert!(parts[2].starts_with('3'), "not a v3 UUID: {u}");
+        assert!(matches!(parts[3].as_bytes()[0], b'8'..=b'b'), "bad variant: {u}");
+        // The whole point: different nicks must yield different UUIDs (and
+        // therefore different default skins).
+        assert_ne!(offline_uuid("Steve"), offline_uuid("Alex"));
+    }
+
+    #[test]
+    fn md5_known_vectors() {
+        let hex = |d: [u8; 16]| d.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        assert_eq!(hex(md5(b"")), "d41d8cd98f00b204e9800998ecf8427e");
+        assert_eq!(hex(md5(b"abc")), "900150983cd24fb0d6963f7d28e17f72");
+        assert_eq!(
+            hex(md5(b"The quick brown fox jumps over the lazy dog")),
+            "9e107d9d372bb6826bd81d3542a419d6"
+        );
+    }
+
     const WORK_DIR: &str = "D:\\Games\\h";
 
     fn skip_if_no_version(id: &str) -> bool {
@@ -278,6 +411,14 @@ mod tests {
         // username substituted into game args.
         assert!(args.iter().any(|a| a == "--username"));
         assert!(args.iter().any(|a| a == "Steve"));
+
+        // the offline UUID derived from the username (not a zero constant)
+        // must be passed via --uuid — the client picks the default skin from it.
+        assert!(
+            args.iter()
+                .any(|a| a == "5627dd98-e6be-3c21-b8a8-e92344183641"),
+            "offline uuid for username Steve missing from launch args"
+        );
 
         // classpath is non-empty and includes the client jar.
         assert!(cp.contains("1.20.1.jar"));
