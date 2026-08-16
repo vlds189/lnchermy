@@ -450,7 +450,7 @@ fn picker_popup_content(ui: &mut Ui, state: &mut AppState, was_open: bool) {
 
     // Search bar pinned above the list; autofocus on the opening frame.
     let search_resp = ui.add(
-        egui::TextEdit::singleline(&mut query).hint_text("Search versions…"),
+        crate::ui::input::TextInput::new(&mut query).hint_text("Search versions…"),
     );
     if !was_open {
         search_resp.request_focus();

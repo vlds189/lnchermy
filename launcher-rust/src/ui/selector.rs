@@ -2,8 +2,8 @@
 // delete button and an optional search bar. Built on a hand-drawn
 // ComboBox-like button + egui::Popup instead of egui::ComboBox: the ComboBox
 // wraps the contents in its own ScrollArea, which produced a second scrollbar
-// that scrolled the search bar away. Our popup has exactly one ScrollArea вЂ”
-// the option list вЂ” so the search bar stays pinned.
+// that scrolled the search bar away. Our popup has exactly one ScrollArea —
+// the option list — so the search bar stays pinned.
 
 use egui::{Align2, Sense, Shape, Stroke, TextWrapMode, TextStyle, Ui, vec2};
 
@@ -20,7 +20,7 @@ pub type SelectorItem = (String, String);
 ///   user picks; the caller may then map the index back to its own data.
 /// - `enabled`: `false` grays out the button and the options (no hover, no
 ///   popup), e.g. while the game is running.
-/// - `on_delete`: optional callback `(index, id)`. If `None`, no рџ—‘ button is
+/// - `on_delete`: optional callback `(index, id)`. If `None`, no 🗑 button is
 ///   shown; if `Some`, every option row gets a trash button that fires the
 ///   callback without changing the selection.
 /// - `on_search`: optional filter callback `(query) -> filtered items`. If
@@ -29,10 +29,10 @@ pub type SelectorItem = (String, String);
 ///   `None`, no search bar is rendered. Filtered rows are matched back to the
 ///   original `items` by id so `selected_idx` / delete indices stay stable.
 /// - `search_hint`: placeholder text shown in the search bar while it is
-///   empty; `None` falls back to "SearchвЂ¦". Ignored without `on_search`.
+///   empty; `None` falls back to "Search…". Ignored without `on_search`.
 /// - `none_text`: text shown on the closed button when `selected_idx` is
-///   `None` (e.g. "Install typeвЂ¦"); `None` shows an empty button.
-/// - `loading`: when `true`, a spinner + "LoadingвЂ¦" row replaces the options
+///   `None` (e.g. "Install type…"); `None` shows an empty button.
+/// - `loading`: when `true`, a spinner + "Loading…" row replaces the options
 ///   (data is being fetched); any search bar is hidden too.
 /// - `loading_error`: optional red caption shown under the spinner while
 ///   loading (e.g. a failed fetch that will retry).
@@ -162,7 +162,7 @@ pub fn selector(
                     ui.set_min_height(LIST_H);
                     if let Some(err) = loading_error {
                         ui.label(
-                            egui::RichText::new(format!("вљ  {err}"))
+                            egui::RichText::new(format!("⚠ {err}"))
                                 .small()
                                 .color(egui::Color32::from_rgb(0xE0, 0x4A, 0x4A)),
                         );
@@ -170,7 +170,7 @@ pub fn selector(
                     }
                     ui.horizontal(|ui| {
                         ui.spinner();
-                        ui.label("LoadingвЂ¦");
+                        ui.label("Loading…");
                     });
                     ui.ctx().request_repaint();
                     return;
@@ -178,8 +178,8 @@ pub fn selector(
 
                 if on_search.is_some() {
                     let search_resp = ui.add(
-                        egui::TextEdit::singleline(&mut query)
-                            .hint_text(search_hint.unwrap_or("SearchвЂ¦")),
+                        crate::ui::input::TextInput::new(&mut query)
+                            .hint_text(search_hint.unwrap_or("Search…")),
                     );
                     if !was_open {
                         search_resp.request_focus();
@@ -258,9 +258,9 @@ pub fn selector(
                                 }
                                 if let Some(cb) = on_delete.as_deref_mut() {
                                     let del = if enabled {
-                                        ui.add(egui::Button::new("рџ—‘"))
+                                        ui.add(egui::Button::new("🗑"))
                                     } else {
-                                        ui.add_enabled(false, egui::Button::new("рџ—‘"))
+                                        ui.add_enabled(false, egui::Button::new("🗑"))
                                     };
                                     let clicked = del.clicked();
                                     if enabled {

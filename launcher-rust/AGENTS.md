@@ -86,10 +86,10 @@ and reinstalls of an already-approved diff are never blocked.
 ### egui 0.36 breaking changes (vs older versions)
 - `TopBottomPanel` → **`Panel`** (`Panel::top(id)`, `Panel::bottom(id)`)
 - `Rounding` → **`CornerRadius`**
-- `run_simple_native` → **`run_native`** + impl `App` trait with `fn ui(&mut self, ui: &mut egui::Ui, frame: &mut Frame)`
+- `run_simple_native` → **`run_native`** + impl `App` trait with `fn ui(&mut self, ui: &mut Ui, frame: &mut Frame)`
 - Panels take `&mut Ui`, not `&Context`
 - egui has its own `Theme::Dark/Light` + `ctx.set_theme()`
-- `TextEdit::singleline().desired_width(x).show(ui).response` — `desired_width` is on the builder, not the Response
+- `TextEdit::singleline(...).desired_width(x).show(ui).response` — `desired_width` is on the builder, not the Response; and in 0.36 `.show(ui).response` is an **`AtomLayoutResponse`** (Deref → `Response`) — the concrete `Response` is `.show(ui).response.response` (see `ui/input.rs`)
 
 ### Thread communication
 - Background workers communicate with the UI thread via **global `LazyLock<Mutex<Option<…>>>`** slots — NOT `thread_local!` (which is per-thread and invisible to other threads). This was a critical bug that caused version lists to never appear.

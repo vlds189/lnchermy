@@ -251,7 +251,7 @@ fn java_window(ctx: &egui::Context, state: &mut AppState) {
             ui.horizontal(|ui| {
                 ui.label("Custom:");
                 ui.add(
-                    egui::TextEdit::singleline(&mut state.java_custom)
+                    crate::ui::input::TextInput::new(&mut state.java_custom)
                         .desired_width(50.0)
                         .hint_text("e.g. 11"),
                 );

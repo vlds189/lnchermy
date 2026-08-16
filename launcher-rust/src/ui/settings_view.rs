@@ -115,18 +115,20 @@ fn memory_section(ui: &mut Ui, state: &mut AppState) {
     ui.label(RichText::new("Custom").color(Color32::GRAY).small());
     ui.horizontal(|ui| {
         ui.label("MIN:");
-        let r = egui::TextEdit::singleline(&mut state.settings.ram_min)
+        // NB: clearing via the ✖ does NOT fire `changed()` (the flag is
+        // computed before the clear), so a ✖-emptied RAM value is not
+        // persisted until the next keystroke — safer than a manual
+        // select-all+delete, which would save "" straight to disk.
+        let r = crate::ui::input::TextInput::new(&mut state.settings.ram_min)
             .desired_width(60.0)
-            .show(ui)
-            .response;
+            .show(ui);
         if r.changed() {
             let _ = state.save_settings();
         }
         ui.label("  MAX:");
-        let r = egui::TextEdit::singleline(&mut state.settings.ram_max)
+        let r = crate::ui::input::TextInput::new(&mut state.settings.ram_max)
             .desired_width(60.0)
-            .show(ui)
-            .response;
+            .show(ui);
         if r.changed() {
             let _ = state.save_settings();
         }
@@ -150,12 +152,15 @@ fn username_section(ui: &mut Ui, state: &mut AppState) {
         .ctx()
         .data(|d| d.get_temp::<String>(username_edit_id()))
         .unwrap_or_default();
-    let resp = egui::TextEdit::singleline(&mut name)
+    let resp = crate::ui::input::TextInput::new(&mut name)
         .desired_width(180.0)
-        .show(ui)
-        .response;
+        .show(ui);
     ui.ctx().data_mut(|d| d.insert_temp(username_edit_id(), name.clone()));
     ui.label(RichText::new(USERNAME_HINT).small().color(Color32::GRAY));
+    // NB: clearing via the field's ✖ (ui/input.rs) blurs the edit for a
+    // frame, so this lost_focus handler may fire mid-clear — it saves the
+    // typed text if valid, or restores the saved name when empty. The end
+    // state after the ✖ click completes is still correct (empty, focused).
     if resp.lost_focus() {
         let trimmed = name.trim();
         if Settings::is_valid_username(trimmed) {
@@ -188,10 +193,9 @@ fn content_index_section(ui: &mut Ui, state: &mut AppState) {
         .ctx()
         .data(|d| d.get_temp::<String>(url_edit_id()))
         .unwrap_or_default();
-    let resp = egui::TextEdit::singleline(&mut url)
+    let resp = crate::ui::input::TextInput::new(&mut url)
         .desired_width(420.0)
-        .show(ui)
-        .response;
+        .show(ui);
     ui.ctx().data_mut(|d| d.insert_temp(url_edit_id(), url.clone()));
     ui.label(
         RichText::new("Direct/raw link to your index JSON, e.g. https://raw.githubusercontent.com/.../index.json")

@@ -1,4 +1,5 @@
 // ui/mod.rs - UI module root. Routes between the main view and settings.
+pub mod input;
 pub mod install_view;
 pub mod main_view;
 pub mod selector;
