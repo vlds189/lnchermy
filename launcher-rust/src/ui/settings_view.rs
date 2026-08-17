@@ -23,54 +23,49 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     }
     ui.ctx().data_mut(|d| d.insert_temp(open_flag_id, true));
 
-    egui::Panel::top("settings_top").show(ui, |ui| {
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            if ui.button("‹ Back").clicked() {
-                // Leaving settings: forget the text buffers so the next visit
-                // re-seeds them from the saved values (see render()).
-                ui.ctx().data_mut(|d| d.insert_temp(open_flag_id, false));
-                state.show_settings = false;
-            }
-            ui.heading(RichText::new("Settings").color(ACCENT).strong());
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(
-                    RichText::new(format!("v{}", APP_VERSION))
-                        .small()
-                        .color(Color32::GRAY),
-                );
-            });
+    // This view is docked into the main window's central area (main_view
+    // owns the top bar / side panel / status bar) — no panels of its own.
+    // Header row: back button + title.
+    ui.horizontal(|ui| {
+        if ui.button("‹ Back").clicked() {
+            // Leaving settings: forget the text buffers so the next visit
+            // re-seeds them from the saved values (see render()).
+            ui.ctx().data_mut(|d| d.insert_temp(open_flag_id, false));
+            state.show_settings = false;
+        }
+        ui.heading(RichText::new("Settings").color(ACCENT).strong());
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.label(
+                RichText::new(format!("v{}", APP_VERSION))
+                    .small()
+                    .color(Color32::GRAY),
+            );
         });
-        ui.add_space(4.0);
-        // No explicit `ui.separator()` here: the top panel already draws its
-        // own edge line (show_separator_line) — an explicit one rendered a
-        // second, stray line right under the header.
     });
+    ui.add_space(4.0);
 
-    egui::CentralPanel::default().show(ui, |ui| {
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            memory_section(ui, state);
-            ui.add_space(10.0);
-            ui.separator();
-            ui.add_space(10.0);
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        memory_section(ui, state);
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(10.0);
 
-            username_section(ui, state);
-            ui.add_space(10.0);
-            ui.separator();
-            ui.add_space(10.0);
+        username_section(ui, state);
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(10.0);
 
-            content_index_section(ui, state);
-            ui.add_space(10.0);
-            ui.separator();
-            ui.add_space(10.0);
+        content_index_section(ui, state);
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(10.0);
 
-            theme_section(ui, state);
-            ui.add_space(10.0);
-            ui.separator();
-            ui.add_space(10.0);
+        theme_section(ui, state);
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(10.0);
 
-            update_section(ui, state);
-        });
+        update_section(ui, state);
     });
 }
 

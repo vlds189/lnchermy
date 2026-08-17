@@ -8,13 +8,12 @@ pub mod settings_view;
 use crate::state::AppState;
 use egui::Ui;
 
-/// Render the active screen based on app state.
+/// Render the window. The window chrome (top bar, side panel, status bar)
+/// always belongs to main_view; the settings screen is docked INTO the main
+/// view's central area (where launch options / install sit) instead of
+/// replacing the whole window layout.
 pub fn render(ui: &mut Ui, state: &mut AppState) {
-    if state.show_settings {
-        settings_view::render(ui, state);
-    } else {
-        main_view::render(ui, state);
-    }
+    main_view::render(ui, state);
 }
 
 /// Show a hand cursor over a modal window's close button.

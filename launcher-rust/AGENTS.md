@@ -33,6 +33,24 @@ the diff hash differs from the last reviewed one (`.opencode/review-gate.sha`).
 The retry after the review is the confirmation signal. `cargo check`/`cargo test`
 and reinstalls of an already-approved diff are never blocked.
 
+## Release workflow (mandatory)
+
+The moment a release version is being chosen (user asks to release / the next
+version number is about to be picked — before ANY edit to `version.json`,
+`src/state.rs::APP_VERSION`, docs headers or tags):
+
+1. Load the `release-version-check` skill (`.opencode/skills/`) and run it
+   against the proposed version: it verifies semver, that the version is
+   higher than the last local AND remote git tag and the last GitHub release,
+   that `version.json` / `APP_VERSION` stay in sync, and that no `vX.Y.Z+`
+   doc placeholders remain. Report the verdict before bumping.
+2. Only then bump version + docs, rebuild release (the `review-gate` retry
+   flow still applies), and release.
+
+The `release-version-hook` plugin (`.opencode/plugins/`) appends a reminder
+to release-intent messages so the skill fires automatically; treat the
+reminder as an instruction to run the skill right away.
+
 ## Architecture
 
 ### Entry point

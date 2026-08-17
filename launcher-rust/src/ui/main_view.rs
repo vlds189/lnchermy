@@ -101,15 +101,20 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         ui.add_space(2.0);
     });
 
-    // Main content.
+    // Main content. Settings is docked into this same central area (window
+    // chrome above/below stays) — it swaps out the launch/install sections.
     egui::CentralPanel::default().show(ui, |ui| {
-        launch_options_section(ui, state);
+        if state.show_settings {
+            super::settings_view::render(ui, state);
+        } else {
+            launch_options_section(ui, state);
 
-        ui.add_space(10.0);
-        ui.separator();
-        ui.add_space(6.0);
+            ui.add_space(10.0);
+            ui.separator();
+            ui.add_space(6.0);
 
-        install_section(ui, state);
+            install_section(ui, state);
+        }
     });
 
     // Progress bar overlay while a background task runs.

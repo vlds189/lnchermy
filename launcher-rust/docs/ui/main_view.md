@@ -8,8 +8,10 @@
 ## Как работает
 - `render()` — сборка панелей: `Panel::top` (заголовок + версия), `Panel::left`
   «side_panel» (сайдбар: переключатель темы ☀/🌙 и кнопка «⚙ Settings»),
-  `Panel::bottom` (статус-бар Task), `CentralPanel` (секции «Installed versions»,
-  «Launch options», «Install»).
+  `Panel::bottom` (статус-бар Task), `CentralPanel` — главный контент:
+  при `show_settings` он рендерит `settings_view::render` (настройки
+  встроены в область launch/install, а не отдельным экраном), иначе
+  секции «Launch options» и «Install».
 - Сайдбар сворачивается/разворачивается: ширина анимируется
   `animate_value_with_time` (0.18 с), цель `110 px` (hover) / `52 px` (обычно);
   hover-зона — rect панели с прошлого кадра (temp-data, Id `side_panel`) + 12 px.
