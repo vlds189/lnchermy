@@ -373,7 +373,7 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
             let rresp = super::icons::icon_button(
                 ui,
                 super::icons::RELOAD,
-                18.0,
+                20.0,
                 egui::vec2(34.0, 34.0),
                 None,
                 Some(ACCENT.linear_multiply(0.15)),
