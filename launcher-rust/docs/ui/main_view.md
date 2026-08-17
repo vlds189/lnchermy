@@ -18,19 +18,27 @@
   без тряски. Отступы симметричны: свёрнутая панель 52 px = иконка (~34 px) +
   8 px слева/справа; промежуток между кнопками 4 px в обоих состояниях.
 - `version_list_section()`: кнопка «🔁 <выбранная версия>» открывает кастомный
-  launch-пикер (`picker_popup_content()`) — сворачиваемые секции:
-  «Installed» (выбор версии + 🗑 удаление), «Not installed» (армирует
-  `pending_install` — режим «Install <версия>» на Launch-кнопке), «Forge» и
-  «OptiFine» (каталоги модлоадеров из тех же фоновых слотов, что и Install;
-  свёрнуты по умолчанию; выбор = мгновенный старт установки). Поиск фильтрует
-  все секции (`forge 1.20`, `optifine 1.16`). Секции сворачиваются кликом по
-  заголовку (треугольник ▲ нарисован painter'ом — в шрифтах egui нет ▸/▼);
-  состояние — temp-data в ctx. Заголовки-секции и строки блокируются при
-  запущенной игре (`game_running`), Forge/OptiFine — ещё и при занятой задаче
-  (`busy`). При ошибке каталога вместо «Loading…» показывается
-  `⚠ Forge: <ошибка>`, фетч ретраится по троттлингу 30 с.
-  При `LaunchStatus::Running` строки disabled. Выбор версии сбрасывает
-  `LaunchStatus::Idle`.
+  launch-пикер (`picker_popup_content()`) — две сворачиваемые секции:
+  «Installed» (выбор версии + 🗑 удаление) и «Not installed» — всё, что можно
+  установить: vanilla из манифеста + Forge + OptiFine-каталоги (из тех же
+  фоновых слотов, что и Install), сгруппированные по MC-версии: строка
+  vanilla, под ней её Forge, под ней OptiFine — «семейство» версии одним
+  блоком (порядок MC — как в манифесте, затем Forge/OptiFine-only). Forge/OptiFine-строки, чья версия уже
+  установлена (`id.starts_with("{mc}-forge-")` / `"-OptiFine_"` — второй раз
+  ставить бессмысленно), не показываются. Все строки «Not installed» —
+  одинаковые selectable-кнопки: выбор армирует `pending_install`
+  (kind-aware enum `PendingInstall::Vanilla/Forge/OptiFine`); Launch-кнопка
+  становится «⬇ Install <label>», клик по ней запускает соответствующий
+  установщик (диспатч в `launch_options_section`). Поиск фильтрует все
+  строки по отображаемому label («forge 1.20», «optifine 1.16»,
+  «1.20.1»). Секции сворачиваются кликом по заголовку (треугольник ▲
+  нарисован painter'ом —
+  в шрифтах egui нет ▸/▼); состояние — temp-data в ctx. Строки блокируются
+  при запущенной игре (`game_running`). Пока каталог грузится/упал —
+  hint-строка внутри
+  «Not installed» («Loading Forge catalog…» / `⚠ Forge: <ошибка>`), фетч
+  ретраится по троттлингу 30 с. При `LaunchStatus::Running` строки disabled.
+  Выбор версии сбрасывает `LaunchStatus::Idle`.
 - `launch_options_section()`: Launch-кнопка; при hover на Running показывает
   «✖ Close Game» (глиф ✖, а не ✕ — последний отсутствует в шрифтах egui),
   клик открывает confirm-диалог. Кнопка всегда enabled, чтобы ловить hover.
@@ -51,6 +59,27 @@
   `MANIFEST_LAST_FETCH` + `manifest_fetch_allowed()` — ретрай не чаще 30 с.
 
 ## История изменений
+### 2026-08-17 — v3.0.11
+- «Not installed»: строки сгруппированы по MC-версии — vanilla, под ней
+  Forge, под ней OptiFine (раньше три раздельных списка). Порядок MC —
+  манифест (новые первыми), затем Forge/OptiFine-only версии; хэш-сеты
+  для membership-проверок (манифест ~700 версий, код бежит каждый кадр
+  открытого пикера).
+- Forge/OptiFine-строки пикера стали selectable-кнопками, как vanilla:
+  выбор ≠ мгновенная установка, а арм `PendingInstall::Forge/OptiFine`
+  (Launch → «⬇ Install Forge …», клик запускает установщик). «busy»-блок
+  строк убран (занятость гасит саму Install-кнопку).
+- `pending_install` из `Option<String>` → `Option<PendingInstall>` (enum с
+  kind); авто-выбор после установки по `matched_installed_id()`
+  (main.rs busy→idle), Forge/OptiFine икают ожидаемые имена папок.
+
+### 2026-08-17 — v3.0.10
+- Launch-пикер: секции Forge/OptiFine убраны — их строки переехали внутрь
+  «Not installed» (vanilla + Forge + OptiFine в одном списке). Строки уже
+  установленных Forge/OptiFine не показываются; загрузка/ошибка каталога —
+  hint-строкой в секции. Хедер «Not installed» появляется, только если
+  секция непустая.
+
 ### 2026-08-17 — v3.0.9
 - Launch-пикер вместо селектора версий: свёрнутые секции Installed / Not
   installed / Forge / OptiFine, поиск по всем секциям, выбор Forge/OptiFine

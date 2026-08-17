@@ -176,9 +176,9 @@ impl App for LauncherApp {
             self.state.rescan_versions();
             // A version picked in the 🔄 picker just finished installing:
             // auto-select it and take the launch button out of install mode.
-            if let Some(v) = self.state.pending_install.clone() {
-                if self.state.installed_versions.iter().any(|x| x == &v) {
-                    self.state.selected_version = Some(v);
+            if let Some(p) = self.state.pending_install.clone() {
+                if let Some(v) = p.matched_installed_id(&self.state.installed_versions) {
+                    self.state.selected_version = Some(v.to_string());
                     self.state.pending_install = None;
                     *self.state.launch_status.lock().unwrap() =
                         state::LaunchStatus::Idle;

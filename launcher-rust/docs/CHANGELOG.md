@@ -1,5 +1,23 @@
 # Изменения проекта
 
+## v3.0.11 — 2026-08-17
+### Изменено
+- Launch-пикер: вместо 4 секций остались две — «Installed» и «Not
+  installed». Forge и OptiFine-каталоги теперь строки внутри «Not
+  installed» (vanilla + модлоадеры в одном списке); уже установленные
+  Forge/OptiFine-версии не дублируются; секция «Not installed» появляется
+  только при наличии содержимого.
+- «Not installed» сгруппирован по MC-версии: vanilla → её Forge → её
+  OptiFine одним блоком (порядок MC — как в манифесте, потом
+  Forge/OptiFine-only версии; раньше были три раздельных списка).
+- Forge/OptiFine-строки выглядят и ведут себя как обычные строки «Not
+  installed» — selectable-кнопки с армом установки: `pending_install`
+  стал kind-aware enum (`PendingInstall::Vanilla/Forge/OptiFine`), Launch
+  становится «⬇ Install <label>» и клик запускает нужный установщик
+  (раньше Forge/OptiFine стартовали установку сразу при клике в пикере).
+  После установки авто-выбор версии ищет по `matched_installed_id()`
+  (Forge/OptiFine — по ожидаемым именам папок).
+
 ## v3.0.10 — 2026-08-17
 ### Убрано
 - RAM-пресеты в настройках: остались только поля ввода MIN/MAX.

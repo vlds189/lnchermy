@@ -1,5 +1,5 @@
 // ui/main_view.rs - Main launcher screen: version list, RAM/username, launch button.
-use crate::state::{AppState, Task, APP_VERSION};
+use crate::state::{AppState, PendingInstall, Task, APP_VERSION};
 use crate::theme::{ACCENT, ERROR, INFO, WARN};
 use egui::{Color32, RichText, Ui};
 
@@ -260,9 +260,13 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
             // disk: the Launch button turns into the installer for it. Takes
             // precedence over any stale launch Error — install is the active
             // intent now.
-            let v = state.pending_install.as_deref().unwrap_or_default();
+            let label = state
+                .pending_install
+                .as_ref()
+                .map(PendingInstall::label)
+                .unwrap_or_default();
             (
-                RichText::new(format!("⬇  Install {v}")).strong(),
+                RichText::new(format!("⬇  Install {label}")).strong(),
                 Some(INFO),
                 !task_busy,
             )
@@ -314,9 +318,17 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
             }
             _ if state.pending_install.is_some() => {
                 // The launch button is in "install" mode: clicking it starts
-                // the download of the version picked in the 🔄 picker.
-                if let Some(v) = state.pending_install.clone() {
-                    start_vanilla_download(state, v);
+                // the install of the version picked in the 🔄 picker (the
+                // kind decides vanilla vs Forge vs OptiFine install).
+                match state.pending_install.clone() {
+                    Some(PendingInstall::Vanilla(v)) => start_vanilla_download(state, v),
+                    Some(PendingInstall::Forge(mc, build)) => {
+                        super::install_view::start_forge_install(state, mc, build);
+                    }
+                    Some(PendingInstall::OptiFine(_mc, build)) => {
+                        super::install_view::start_optifine_install(state, build);
+                    }
+                    None => {}
                 }
             }
             _ if !no_version => {
@@ -348,11 +360,14 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
             picker_popup_content(ui, state, was_open);
         });
 
-    if let Some(v) = &state.pending_install {
+    if let Some(p) = &state.pending_install {
         ui.label(
-            RichText::new(format!("{v} is not installed yet — clicking above installs it."))
-                .small()
-                .color(INFO),
+            RichText::new(format!(
+                "{} is not installed yet — clicking above installs it.",
+                p.label()
+            ))
+            .small()
+            .color(INFO),
         );
     } else if no_version {
         ui.label(
@@ -373,8 +388,9 @@ fn launch_section(_ui: &mut Ui, _state: &mut AppState) {
 
 /// Content of the 🔄 version picker popup: installed versions first, then
 /// catalog versions that are not installed yet. Picking an installed version
-/// selects it; picking a missing one arms the "Install <version>" mode on
-/// the launch button (stored in `state.pending_install`).
+/// selects it; picking a missing one arms the "Install <...>" mode on the
+/// launch button (stored in `state.pending_install`, kind-aware: vanilla /
+/// Forge / OptiFine — all rows share the same selectable look).
 fn picker_popup_content(ui: &mut Ui, state: &mut AppState, was_open: bool) {
     /// A collapsible section of the picker. Collapse state lives in egui's
     /// data store (keyed per section) so it survives repaints.
@@ -382,34 +398,23 @@ fn picker_popup_content(ui: &mut Ui, state: &mut AppState, was_open: bool) {
     enum Section {
         Installed,
         Remote,
-        Forge,
-        OptiFine,
     }
     impl Section {
         fn label(self) -> &'static str {
             match self {
                 Self::Installed => "Installed",
                 Self::Remote => "Not installed",
-                Self::Forge => "Forge",
-                Self::OptiFine => "OptiFine",
             }
         }
         fn collapse_id(self) -> egui::Id {
             egui::Id::new("launch_picker_section").with(match self {
                 Self::Installed => "installed",
                 Self::Remote => "remote",
-                Self::Forge => "forge",
-                Self::OptiFine => "optifine",
             })
-        }
-        // Mod-loader catalogs are long and secondary to the version lists,
-        // so they start collapsed.
-        fn default_collapsed(self) -> bool {
-            matches!(self, Self::Forge | Self::OptiFine)
         }
         fn is_collapsed(self, ctx: &egui::Context) -> bool {
             ctx.data(|d| d.get_temp::<bool>(self.collapse_id()))
-                .unwrap_or(self.default_collapsed())
+                .unwrap_or(false)
         }
     }
 
@@ -431,9 +436,6 @@ fn picker_popup_content(ui: &mut Ui, state: &mut AppState, was_open: bool) {
         *state.launch_status.lock().unwrap(),
         crate::state::LaunchStatus::Running(_)
     );
-    // Installs from the mod-loader sections are real tasks — block them
-    // while another download/install is already running.
-    let busy = state.task_snapshot().is_busy();
 
     if state.remote_versions.is_empty() {
         // Catalog not fetched yet: trigger the same background fetch the
@@ -490,8 +492,6 @@ fn picker_popup_content(ui: &mut Ui, state: &mut AppState, was_open: bool) {
     // section's version rows (headers stay visible to expand back).
     let installed_collapsed = Section::Installed.is_collapsed(ui.ctx());
     let remote_collapsed = Section::Remote.is_collapsed(ui.ctx());
-    let forge_collapsed = Section::Forge.is_collapsed(ui.ctx());
-    let optifine_collapsed = Section::OptiFine.is_collapsed(ui.ctx());
 
     if installed_matches || state.installed_versions.is_empty() {
         rows.push(Row::Header(Section::Installed));
@@ -513,89 +513,116 @@ fn picker_popup_content(ui: &mut Ui, state: &mut AppState, was_open: bool) {
             }
         }
     }
-    let mut remote_matches = false;
+    // "Not installed" = every installable version: vanilla versions from the
+    // manifest that aren't installed yet, plus the Forge / OptiFine mod-loader
+    // catalogs (the same background slots the old "Install type…" selector
+    // used). Rows are grouped by MC version — vanilla, its Forge and its
+    // OptiFine sit next to each other, so the "1.7.10 family" is visible as
+    // one block instead of three scattered lists. A catalog that is still
+    // loading contributes a hint row at the end. The header is pushed only
+    // when the section actually has content — a fully installed set shows
+    // no empty section.
+    let mut not_installed: Vec<Row> = Vec::new();
+    let forge_data = super::install_view::forge_catalog();
+    let optifine_data = super::install_view::optifine_catalog();
+
+    // Membership checks run per frame while the popup is open, and the
+    // manifest is ~700 entries — HashSet keeps this O(n) instead of O(n²).
+    let remote_set: std::collections::HashSet<&str> =
+        state.remote_versions.iter().map(String::as_str).collect();
+    let installed_set: std::collections::HashSet<&str> =
+        state.installed_versions.iter().map(String::as_str).collect();
+
+    // MC version order: vanilla manifest order first (newest first), then
+    // any Forge/OptiFine-only versions (e.g. very old ones not in the
+    // manifest). Dedup keeps each version listed once.
+    let mut mc_order: Vec<String> = Vec::new();
     for v in &state.remote_versions {
-        if !state.installed_versions.iter().any(|x| x == v) && matches_q(v) {
-            remote_matches = true;
-            break;
+        if !mc_order.contains(v) {
+            mc_order.push(v.clone());
         }
     }
-    if remote_matches {
+    if let Some(fd) = &forge_data {
+        for mc in &fd.mc_sorted {
+            if !mc_order.contains(mc) {
+                mc_order.push(mc.clone());
+            }
+        }
+    }
+    if let Some(od) = &optifine_data {
+        for mc in &od.mc_sorted {
+            if !mc_order.contains(mc) {
+                mc_order.push(mc.clone());
+            }
+        }
+    }
+
+    for mc in &mc_order {
+        // Vanilla row for this MC (only when it is not installed).
+        if remote_set.contains(mc.as_str())
+            && !installed_set.contains(mc.as_str())
+            && matches_q(mc)
+        {
+            not_installed.push(Row::Remote(mc.clone()));
+        }
+        // Forge row right under it — skipped if any Forge for this MC is
+        // already installed (installing another would just overwrite it).
+        if let Some(fd) = &forge_data {
+            if let Some(builds) = fd.by_mc.get(mc) {
+                if !state
+                    .installed_versions
+                    .iter()
+                    .any(|id| id.starts_with(&format!("{mc}-forge-")))
+                {
+                    let build = crate::install::forge::default_build(mc, builds, &fd.promos);
+                    let label = format!("Forge {mc} ({build})");
+                    if matches_q(&label) {
+                        not_installed.push(Row::Forge(mc.clone(), build));
+                    }
+                }
+            }
+        }
+        // OptiFine row right under Forge.
+        if let Some(od) = &optifine_data {
+            if let Some(builds) = od.by_mc.get(mc) {
+                if !state
+                    .installed_versions
+                    .iter()
+                    .any(|id| id.starts_with(&format!("{mc}-OptiFine_")))
+                {
+                    let build = builds.last().cloned().unwrap_or_default();
+                    let label = format!("OptiFine {mc} ({build})");
+                    if matches_q(&label) {
+                        not_installed.push(Row::OptiFine(mc.clone(), build));
+                    }
+                }
+            }
+        }
+    }
+
+    // Loading catalogs: hint rows pinned to the end (their versions are not
+    // known yet; once loaded they slot into mc_order above).
+    if forge_data.is_none() {
+        super::install_view::fetch_forge_async();
+        not_installed.push(Row::Hint(
+            super::install_view::forge_error()
+                .map(|e| format!("⚠ Forge: {e}"))
+                .unwrap_or_else(|| "Loading Forge catalog…".to_string()),
+        ));
+    }
+    if optifine_data.is_none() {
+        super::install_view::fetch_optifine_async();
+        not_installed.push(Row::Hint(
+            super::install_view::optifine_error()
+                .map(|e| format!("⚠ OptiFine: {e}"))
+                .unwrap_or_else(|| "Loading OptiFine catalog…".to_string()),
+        ));
+    }
+
+    if !not_installed.is_empty() {
         rows.push(Row::Header(Section::Remote));
         if !remote_collapsed {
-            for v in &state.remote_versions {
-                if !state.installed_versions.iter().any(|x| x == v) && matches_q(v) {
-                    rows.push(Row::Remote(v.clone()));
-                }
-            }
-        }
-    }
-
-    // Forge / OptiFine mod-loader catalogs (the same background slots the
-    // old "Install type…" selector used). The fetches are throttled and
-    // idempotent, so poking them while the popup is open is cheap. A catalog
-    // that is still loading keeps its header + hint so the section stays
-    // discoverable. Picking a row starts the install immediately — same
-    // behavior the old selector had.
-    if let Some(fd) = super::install_view::forge_catalog() {
-        let any_forge = q.is_empty()
-            || fd
-                .mc_sorted
-                .iter()
-                .any(|mc| matches_q(&format!("forge {mc}")));
-        if any_forge {
-            rows.push(Row::Header(Section::Forge));
-            if !forge_collapsed {
-                for mc in &fd.mc_sorted {
-                    if matches_q(&format!("forge {mc}")) {
-                        let build = crate::install::forge::default_build(
-                            mc,
-                            &fd.by_mc[mc],
-                            &fd.promos,
-                        );
-                        rows.push(Row::Forge(mc.clone(), build));
-                    }
-                }
-            }
-        }
-    } else {
-        super::install_view::fetch_forge_async();
-        rows.push(Row::Header(Section::Forge));
-        if !forge_collapsed {
-            rows.push(Row::Hint(
-                super::install_view::forge_error()
-                    .map(|e| format!("⚠ Forge: {e}"))
-                    .unwrap_or_else(|| "Loading Forge catalog…".to_string()),
-            ));
-        }
-    }
-
-    if let Some(od) = super::install_view::optifine_catalog() {
-        let any_optifine = q.is_empty()
-            || od
-                .mc_sorted
-                .iter()
-                .any(|mc| matches_q(&format!("optifine {mc}")));
-        if any_optifine {
-            rows.push(Row::Header(Section::OptiFine));
-            if !optifine_collapsed {
-                for mc in &od.mc_sorted {
-                    if matches_q(&format!("optifine {mc}")) {
-                        let build = od.by_mc[mc].last().cloned().unwrap_or_default();
-                        rows.push(Row::OptiFine(mc.clone(), build));
-                    }
-                }
-            }
-        }
-    } else {
-        super::install_view::fetch_optifine_async();
-        rows.push(Row::Header(Section::OptiFine));
-        if !optifine_collapsed {
-            rows.push(Row::Hint(
-                super::install_view::optifine_error()
-                    .map(|e| format!("⚠ OptiFine: {e}"))
-                    .unwrap_or_else(|| "Loading OptiFine catalog…".to_string()),
-            ));
+            rows.append(&mut not_installed);
         }
     }
 
@@ -724,43 +751,57 @@ fn picker_popup_content(ui: &mut Ui, state: &mut AppState, was_open: bool) {
                         });
                     }
                     Row::Remote(id) => {
-                        let selected =
-                            state.pending_install.as_deref() == Some(id.as_str());
+                        let selected = matches!(
+                            state.pending_install,
+                            Some(PendingInstall::Vanilla(ref v)) if v == id
+                        );
                         let resp = if game_running {
                             ui.add_enabled(false, egui::Button::selectable(selected, id.clone()))
                         } else {
                             ui.add(egui::Button::selectable(selected, id.clone()))
                         };
                         if resp.clicked() {
-                            state.pending_install = Some(id.clone());
+                            state.pending_install = Some(PendingInstall::Vanilla(id.clone()));
                             ui.close();
                         }
                     }
                     Row::Forge(mc, build) => {
                         let label = format!("Forge {mc}  ({build})");
-                        let resp = if game_running || busy {
-                            ui.add_enabled(false, egui::Button::new(label))
+                        let selected = matches!(
+                            state.pending_install,
+                            Some(PendingInstall::Forge(ref m, ref b)) if m == mc && b == build
+                        );
+                        let resp = if game_running {
+                            ui.add_enabled(
+                                false,
+                                egui::Button::selectable(selected, label.clone()),
+                            )
                         } else {
-                            ui.add(egui::Button::new(label))
+                            ui.add(egui::Button::selectable(selected, label.clone()))
                         };
                         if resp.clicked() {
-                            super::install_view::start_forge_install(
-                                state,
-                                mc.clone(),
-                                build.clone(),
-                            );
+                            state.pending_install =
+                                Some(PendingInstall::Forge(mc.clone(), build.clone()));
                             ui.close();
                         }
                     }
                     Row::OptiFine(mc, build) => {
                         let label = format!("OptiFine {mc}  ({build})");
-                        let resp = if game_running || busy {
-                            ui.add_enabled(false, egui::Button::new(label))
+                        let selected = matches!(
+                            state.pending_install,
+                            Some(PendingInstall::OptiFine(ref m, ref b)) if m == mc && b == build
+                        );
+                        let resp = if game_running {
+                            ui.add_enabled(
+                                false,
+                                egui::Button::selectable(selected, label.clone()),
+                            )
                         } else {
-                            ui.add(egui::Button::new(label))
+                            ui.add(egui::Button::selectable(selected, label.clone()))
                         };
                         if resp.clicked() {
-                            super::install_view::start_optifine_install(state, build.clone());
+                            state.pending_install =
+                                Some(PendingInstall::OptiFine(mc.clone(), build.clone()));
                             ui.close();
                         }
                     }

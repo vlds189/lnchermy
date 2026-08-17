@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 /// Launcher version, bumped per release. Matches version.json in the repo.
-pub const APP_VERSION: &str = "3.0.10";
+pub const APP_VERSION: &str = "3.0.11";
 
 /// What the launcher is currently doing. Drives the UI (idle vs progress vs error).
 #[derive(Debug, Clone, Default)]
@@ -119,9 +119,59 @@ pub struct AppState {
     /// "Launch" text on hover when in Error state).
     pub launch_btn_hovered: bool,
     /// Version picked from the 🔄 picker popup that is NOT installed yet.
-    /// While set, the Launch button becomes "Install <version>" instead of
-    /// "LAUNCH". Cleared automatically once the version installs.
-    pub pending_install: Option<String>,
+    /// While set, the Launch button becomes "Install <...>" instead of
+    /// "LAUNCH". Cleared automatically once the version installs. Carries
+    /// the install kind so Forge/OptiFine rows arm the same mode as vanilla.
+    pub pending_install: Option<PendingInstall>,
+}
+
+/// What the 🔄 picker armed the Launch button to install. Uniform "pick a row
+/// → click Install" flow for every kind of version (vanilla / mod-loaders).
+#[derive(Debug, Clone)]
+pub enum PendingInstall {
+    /// Version id from the vanilla manifest, e.g. "1.20.1".
+    Vanilla(String),
+    /// Minecraft version + Forge build, e.g. ("1.20.1", "47.4.13").
+    Forge(String, String),
+    /// Minecraft version + OptiFine build, e.g. ("1.20.1", "1.20.1_HD_U_I6").
+    OptiFine(String, String),
+}
+
+impl PendingInstall {
+    /// The row label shown on the Launch button and the hint line.
+    pub fn label(&self) -> String {
+        match self {
+            Self::Vanilla(v) => v.clone(),
+            Self::Forge(mc, build) => format!("Forge {mc} ({build})"),
+            Self::OptiFine(mc, build) => format!("OptiFine {mc} ({build})"),
+        }
+    }
+
+    /// After a busy→idle transition, find the id this install produced in
+    /// the freshly rescanned installed list. Vanilla ids match exactly;
+    /// mod-loader folder names vary by installer (%s mc prefix stripped or
+    /// kept), so Forge/OptiFine compare against their expected variants.
+    pub fn matched_installed_id<'a>(&self, installed: &'a [String]) -> Option<&'a str> {
+        match self {
+            Self::Vanilla(v) => installed.iter().find(|x| *x == v).map(String::as_str),
+            Self::Forge(mc, build) => {
+                let id = format!("{mc}-forge-{build}");
+                installed.iter().find(|x| **x == id).map(String::as_str)
+            }
+            Self::OptiFine(mc, build) => {
+                let stripped = build
+                    .strip_prefix(mc.as_str())
+                    .unwrap_or(build)
+                    .trim_start_matches('_');
+                let a = format!("{mc}-OptiFine_{stripped}");
+                let b = format!("{mc}-OptiFine_{build}");
+                installed
+                    .iter()
+                    .find(|x| **x == a || **x == b)
+                    .map(String::as_str)
+            }
+        }
+    }
 }
 
 impl AppState {
