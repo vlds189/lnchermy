@@ -64,34 +64,16 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             // Fixed width ≥ widest label ("Dashboard" ≈104px), so all three
             // sidebar buttons render exactly the same size.
             const SIDEBAR_BTN_W: f32 = 104.0;
-            if super::icons::icon_button(
-                ui,
-                theme_icon,
-                18.0,
-                egui::vec2(SIDEBAR_BTN_W, 0.0),
-                Some("Theme"),
-                None,
-                true,
-            )
-            .on_hover_text(theme_hover)
-            .clicked()
-            {
-                state.settings.theme = state.settings.theme.toggle();
-                crate::theme::apply(ui.ctx(), state.settings.theme);
-                let _ = state.save_settings();
-            }
-            ui.add_space(4.0);
             // Gamepad = Dashboard: leaves settings (if open) and shows the
             // main screen. The version picker is NOT opened here anymore —
             // it has its own reload button next to Launch.
-            if super::icons::icon_button(
+            if super::icons::nav_button(
                 ui,
                 super::icons::GAMEPAD,
                 18.0,
                 egui::vec2(SIDEBAR_BTN_W, 0.0),
                 Some("Dashboard"),
-                None,
-                true,
+                !state.show_settings,
             )
             .on_hover_text("Back to the main screen")
             .clicked()
@@ -100,37 +82,26 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 super::settings_view::mark_leaving(ui.ctx());
             }
             ui.add_space(4.0);
-            if super::icons::icon_button(
+            if super::icons::nav_button(
                 ui,
                 super::icons::GEAR,
                 18.0,
                 egui::vec2(SIDEBAR_BTN_W, 0.0),
                 Some("Settings"),
-                None,
-                true,
+                state.show_settings,
             )
             .clicked()
             {
                 state.show_settings = true;
             }
         } else {
-            if super::icons::icon_button(ui, theme_icon, 18.0, egui::Vec2::ZERO, None, None, true)
-                .on_hover_text(theme_hover)
-                .clicked()
-            {
-                state.settings.theme = state.settings.theme.toggle();
-                crate::theme::apply(ui.ctx(), state.settings.theme);
-                let _ = state.save_settings();
-            }
-            ui.add_space(4.0);
-            if super::icons::icon_button(
+            if super::icons::nav_button(
                 ui,
                 super::icons::GAMEPAD,
                 18.0,
                 egui::Vec2::ZERO,
                 None,
-                None,
-                true,
+                !state.show_settings,
             )
             .on_hover_text("Back to the main screen")
             .clicked()
@@ -139,20 +110,53 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 super::settings_view::mark_leaving(ui.ctx());
             }
             ui.add_space(4.0);
-            if super::icons::icon_button(
+            if super::icons::nav_button(
                 ui,
                 super::icons::GEAR,
                 18.0,
                 egui::Vec2::ZERO,
                 None,
-                None,
-                true,
+                state.show_settings,
             )
             .clicked()
             {
                 state.show_settings = true;
             }
         }
+
+        // Theme toggle pinned to the very bottom of the sidebar. The icon
+        // depends on the current theme (sun = switch to light, moon = switch
+        // to dark). bottom_up layout: first added = bottommost, so the 6px
+        // space sits below the button, mirroring the top margin.
+        ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+            ui.add_space(6.0);
+            if show_text {
+                if super::icons::nav_button(
+                    ui,
+                    theme_icon,
+                    18.0,
+                    egui::vec2(104.0, 0.0),
+                    Some("Theme"),
+                    false,
+                )
+                .on_hover_text(theme_hover)
+                .clicked()
+                {
+                    state.settings.theme = state.settings.theme.toggle();
+                    crate::theme::apply(ui.ctx(), state.settings.theme);
+                    let _ = state.save_settings();
+                }
+            } else {
+                if super::icons::nav_button(ui, theme_icon, 18.0, egui::Vec2::ZERO, None, false)
+                    .on_hover_text(theme_hover)
+                    .clicked()
+                {
+                    state.settings.theme = state.settings.theme.toggle();
+                    crate::theme::apply(ui.ctx(), state.settings.theme);
+                    let _ = state.save_settings();
+                }
+            }
+        });
     });
     ui.ctx().data_mut(|d| d.insert_temp(side_id, side_inner.response.rect));
 

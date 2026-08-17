@@ -76,8 +76,32 @@ pub fn icon_button(
             min_size,
             text,
             fill,
+            nav: None,
         },
     )
+}
+
+/// Sidebar navigation button: a frameless `icon_button` variant. Idle state
+/// has NO background and NO stroke (looks like plain text with an icon),
+/// hover gets the standard weak-bg pill, and the active tab
+/// (`selected == true`) is highlighted persistently with an accent-tinted
+/// pill + accent-colored icon/label. Nav buttons are always enabled.
+pub fn nav_button(
+    ui: &mut Ui,
+    source: ImageSource<'static>,
+    icon_size: f32,
+    min_size: Vec2,
+    text: Option<&str>,
+    selected: bool,
+) -> Response {
+    ui.add(IconButton {
+        source,
+        icon_size,
+        min_size,
+        text,
+        fill: None,
+        nav: Some(selected),
+    })
 }
 
 struct IconButton<'a> {
@@ -86,6 +110,9 @@ struct IconButton<'a> {
     min_size: Vec2,
     text: Option<&'a str>,
     fill: Option<Color32>,
+    /// `None` = full button frame (default). `Some(selected)` = frameless
+    /// sidebar-navigation styling; see [`nav_button`].
+    nav: Option<bool>,
 }
 
 impl Widget for IconButton<'_> {
@@ -121,15 +148,50 @@ impl Widget for IconButton<'_> {
 
         if ui.is_rect_visible(rect) {
             let full_uv = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0));
-            let fg = visuals.fg_stroke.color;
-            // Same flat button frame as egui's Button (stroke from the state).
-            ui.painter().rect(
-                rect,
-                visuals.corner_radius,
-                self.fill.unwrap_or(visuals.bg_fill),
-                visuals.bg_stroke,
-                StrokeKind::Inside,
-            );
+            // Frame + foreground per mode:
+            // - framed (nav == None): the standard egui Button look;
+            // - nav: no frame when idle ("just text"), weak-bg pill on hover,
+            //   accent-tinted pill + accent fg for the selected tab.
+            let fg = match self.nav {
+                None => visuals.fg_stroke.color,
+                Some(true) => crate::theme::ACCENT,
+                Some(false) => ui.visuals().text_color(),
+            };
+            match self.nav {
+                None => {
+                    ui.painter().rect(
+                        rect,
+                        visuals.corner_radius,
+                        self.fill.unwrap_or(visuals.bg_fill),
+                        visuals.bg_stroke,
+                        StrokeKind::Inside,
+                    );
+                }
+                Some(true) => {
+                    // Accent at ~18% alpha: reads as a highlight without
+                    // competing with the Launch button's solid accent fill.
+                    let a = crate::theme::ACCENT;
+                    let sel_bg = Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), 46);
+                    ui.painter().rect(
+                        rect,
+                        visuals.corner_radius,
+                        sel_bg,
+                        egui::Stroke::NONE,
+                        StrokeKind::Inside,
+                    );
+                }
+                Some(false) => {
+                    if resp.hovered() {
+                        ui.painter().rect(
+                            rect,
+                            visuals.corner_radius,
+                            ui.visuals().widgets.hovered.weak_bg_fill,
+                            egui::Stroke::NONE,
+                            StrokeKind::Inside,
+                        );
+                    }
+                }
+            }
             match galley.as_ref() {
                 Some(g) => {
                     // [icon][label], both vertically centered, tinted with the
