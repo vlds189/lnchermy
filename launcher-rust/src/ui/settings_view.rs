@@ -4,15 +4,6 @@ use crate::state::{AppState, Task, APP_VERSION};
 use crate::theme::{ACCENT, ERROR, INFO};
 use egui::{Align, Color32, Layout, RichText, Ui};
 
-// RAM presets mirror the PowerShell launcher (option 1-5 in Run-Settings).
-const RAM_PRESETS: &[(&str, &str, &str)] = &[
-    ("2G", "4G", "Default (8GB+ RAM)"),
-    ("4G", "6G", ""),
-    ("4G", "8G", "Recommended for mods"),
-    ("8G", "12G", "Heavy modpacks"),
-    ("8G", "16G", ""),
-];
-
 pub fn render(ui: &mut Ui, state: &mut AppState) {
     // The text fields (username, content URL) edit a persistent buffer in
     // egui's data store, not a per-frame clone. Cloning from settings each
@@ -95,24 +86,6 @@ fn memory_section(ui: &mut Ui, state: &mut AppState) {
     });
     ui.add_space(4.0);
 
-    ui.label(RichText::new("Presets").color(Color32::GRAY).small());
-    ui.horizontal_wrapped(|ui| {
-        for (mn, mx, note) in RAM_PRESETS {
-            let label = if note.is_empty() {
-                format!("{mn} / {mx}")
-            } else {
-                format!("{mn} / {mx}  ({note})")
-            };
-            if ui.button(label).clicked() {
-                state.settings.ram_min = mn.to_string();
-                state.settings.ram_max = mx.to_string();
-                let _ = state.save_settings();
-            }
-        }
-    });
-
-    ui.add_space(6.0);
-    ui.label(RichText::new("Custom").color(Color32::GRAY).small());
     ui.horizontal(|ui| {
         ui.label("MIN:");
         // NB: clearing via the ✖ does NOT fire `changed()` (the flag is
