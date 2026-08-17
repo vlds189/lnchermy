@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 /// Launcher version, bumped per release. Matches version.json in the repo.
-pub const APP_VERSION: &str = "3.0.8";
+pub const APP_VERSION: &str = "3.0.9";
 
 /// What the launcher is currently doing. Drives the UI (idle vs progress vs error).
 #[derive(Debug, Clone, Default)]
@@ -192,7 +192,16 @@ impl AppState {
             }
         }
         if self.selected_version.is_none() && !self.installed_versions.is_empty() {
-            self.selected_version = Some(self.installed_versions[0].clone());
+            // Prefer the last launched version (persisted in settings) so a
+            // restart reopens where the user left off; fall back to the
+            // alphabetically first installed version.
+            self.selected_version = Some(
+                self.settings
+                    .last_version
+                    .clone()
+                    .filter(|v| self.installed_versions.iter().any(|x| x == v))
+                    .unwrap_or_else(|| self.installed_versions[0].clone()),
+            );
         }
     }
 

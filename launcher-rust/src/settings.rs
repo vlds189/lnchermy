@@ -47,6 +47,11 @@ struct SettingsFile {
     pub username: String,
     #[serde(rename = "Theme", default)]
     pub theme: Theme,
+    /// Id of the last successfully *launched* version; restored as the
+    /// selection on the next start. Optional so pre-3.0.9 settings files
+    /// (no such key) still load.
+    #[serde(rename = "LastVersion", default)]
+    pub last_version: Option<String>,
 }
 
 fn default_ram_min() -> String { "2G".to_string() }
@@ -61,6 +66,7 @@ impl Default for SettingsFile {
             content_index_url: String::new(),
             username: default_username(),
             theme: Theme::Dark,
+            last_version: None,
         }
     }
 }
@@ -73,6 +79,7 @@ pub struct Settings {
     pub content_index_url: String,
     pub username: String,
     pub theme: Theme,
+    pub last_version: Option<String>,
 }
 
 impl Default for Settings {
@@ -90,6 +97,7 @@ impl Settings {
             content_index_url: f.content_index_url,
             username: f.username,
             theme: f.theme,
+            last_version: f.last_version,
         }
     }
 
@@ -100,6 +108,7 @@ impl Settings {
             content_index_url: self.content_index_url.clone(),
             username: self.username.clone(),
             theme: self.theme,
+            last_version: self.last_version.clone(),
         }
     }
 
@@ -160,11 +169,30 @@ mod tests {
         s.username = "Steve".into();
         s.ram_max = "8G".into();
         s.theme = Theme::Light;
+        s.last_version = Some("1.20.1-forge-47.4.13".into());
         s.save(&tmp).unwrap();
         let loaded = Settings::load(&tmp);
         assert_eq!(loaded.username, "Steve");
         assert_eq!(loaded.ram_max, "8G");
         assert_eq!(loaded.theme, Theme::Light);
+        assert_eq!(loaded.last_version.as_deref(), Some("1.20.1-forge-47.4.13"));
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    /// Settings files written before LastVersion existed must still load,
+    /// with the field defaulting to None.
+    #[test]
+    fn old_settings_file_without_last_version_loads() {
+        let tmp = std::env::temp_dir().join("mc_old_settings_test.json");
+        std::fs::write(
+            &tmp,
+            r#"{"RAM_MIN":"4G","RAM_MAX":"6G","ContentIndexUrl":"","Username":"Vlad","Theme":"dark"}"#,
+        )
+        .unwrap();
+        let s = Settings::load(&tmp);
+        assert_eq!(s.username, "Vlad");
+        assert_eq!(s.ram_min, "4G");
+        assert_eq!(s.last_version, None);
         let _ = std::fs::remove_file(&tmp);
     }
 

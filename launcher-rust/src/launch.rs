@@ -389,6 +389,7 @@ mod tests {
             content_index_url: String::new(),
             username: "Steve".into(),
             theme: crate::settings::Theme::Dark,
+            last_version: None,
         };
         let (java, args, main, cp, _natives) =
             build_command("1.20.1", Path::new(WORK_DIR), &settings).unwrap();
@@ -521,6 +522,7 @@ mod tests {
             content_index_url: String::new(),
             username: "SmokeTest".into(),
             theme: crate::settings::Theme::Dark,
+            last_version: None,
         };
         match launch("1.20.1", Path::new(WORK_DIR), &settings) {
             LaunchResult::Ok(_child) => {
