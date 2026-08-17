@@ -4,13 +4,25 @@ use crate::state::{AppState, Task, APP_VERSION};
 use crate::theme::{ACCENT, ERROR, INFO};
 use egui::{Align, Color32, Layout, RichText, Ui};
 
+/// Key of the "settings was open" temp flag: buffered edits (username /
+/// content URL) are seeded on entry and forgotten on leaving (‹ Back or
+/// the gamepad sidebar button).
+const OPEN_FLAG_ID: &str = "settings_was_open";
+
+/// Forget the edit buffers — the user left settings by any route (‹ Back,
+/// or the gamepad sidebar button), so the next visit re-seeds them from the
+/// saved values (see render()).
+pub fn mark_leaving(ctx: &egui::Context) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(OPEN_FLAG_ID), false));
+}
+
 pub fn render(ui: &mut Ui, state: &mut AppState) {
     // The text fields (username, content URL) edit a persistent buffer in
     // egui's data store, not a per-frame clone. Cloning from settings each
     // frame made egui force the OLD value back while typing — you could
     // never erase below 3 chars (the field bounced) and the URL field was
     // practically uneditable. The buffer is re-seeded on every entry.
-    let open_flag_id = egui::Id::new("settings_was_open");
+    let open_flag_id = egui::Id::new(OPEN_FLAG_ID);
     let was_open = ui
         .ctx()
         .data(|d| d.get_temp::<bool>(open_flag_id))
@@ -28,9 +40,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     // Header row: back button + title.
     ui.horizontal(|ui| {
         if ui.button("‹ Back").clicked() {
-            // Leaving settings: forget the text buffers so the next visit
-            // re-seeds them from the saved values (see render()).
-            ui.ctx().data_mut(|d| d.insert_temp(open_flag_id, false));
+            mark_leaving(ui.ctx());
             state.show_settings = false;
         }
         ui.heading(RichText::new("Settings").color(ACCENT).strong());
@@ -83,10 +93,11 @@ fn memory_section(ui: &mut Ui, state: &mut AppState) {
 
     ui.horizontal(|ui| {
         ui.label("MIN:");
-        // NB: clearing via the ✖ does NOT fire `changed()` (the flag is
-        // computed before the clear), so a ✖-emptied RAM value is not
-        // persisted until the next keystroke — safer than a manual
-        // select-all+delete, which would save "" straight to disk.
+        // NB: clearing via the field's close button does NOT fire
+        // `changed()` (the flag is computed before the clear), so a
+        // cleared RAM value is not persisted until the next keystroke —
+        // safer than a manual select-all+delete, which would save "" straight
+        // to disk.
         let r = crate::ui::input::TextInput::new(&mut state.settings.ram_min)
             .desired_width(60.0)
             .show(ui);
@@ -125,10 +136,11 @@ fn username_section(ui: &mut Ui, state: &mut AppState) {
         .show(ui);
     ui.ctx().data_mut(|d| d.insert_temp(username_edit_id(), name.clone()));
     ui.label(RichText::new(USERNAME_HINT).small().color(Color32::GRAY));
-    // NB: clearing via the field's ✖ (ui/input.rs) blurs the edit for a
-    // frame, so this lost_focus handler fires mid-clear. An empty name is
-    // therefore left alone: nothing is persisted, the launch keeps using the
-    // last saved nick, and re-opening settings re-seeds the buffer from it.
+    // NB: clearing via the field's close button (ui/input.rs) blurs the
+    // edit for a frame, so this lost_focus handler fires mid-clear. An empty
+    // name is therefore left alone: nothing is persisted, the launch keeps
+    // using the last saved nick, and re-opening settings re-seeds the buffer
+    // from it.
     if resp.lost_focus() {
         let trimmed = name.trim();
         if Settings::is_valid_username(trimmed) {
@@ -175,8 +187,13 @@ fn theme_section(ui: &mut Ui, state: &mut AppState) {
     ui.add_space(2.0);
     ui.horizontal(|ui| {
         let cur = state.settings.theme;
+        ui.add(super::icons::tinted(
+            super::icons::MOON,
+            16.0,
+            ui.visuals().text_color(),
+        ));
         if ui
-            .radio(cur == Theme::Dark, "🌙 Dark")
+            .radio(cur == Theme::Dark, "Dark")
             .on_hover_text("Dark theme (default)")
             .clicked()
             && cur != Theme::Dark
@@ -185,8 +202,14 @@ fn theme_section(ui: &mut Ui, state: &mut AppState) {
             crate::theme::apply(ui.ctx(), Theme::Dark);
             let _ = state.save_settings();
         }
+        ui.add_space(8.0);
+        ui.add(super::icons::tinted(
+            super::icons::SUN,
+            16.0,
+            ui.visuals().text_color(),
+        ));
         if ui
-            .radio(cur == Theme::Light, "☀ Light")
+            .radio(cur == Theme::Light, "Light")
             .on_hover_text("Light theme")
             .clicked()
             && cur != Theme::Light

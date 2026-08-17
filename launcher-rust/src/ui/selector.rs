@@ -20,8 +20,8 @@ pub type SelectorItem = (String, String);
 ///   user picks; the caller may then map the index back to its own data.
 /// - `enabled`: `false` grays out the button and the options (no hover, no
 ///   popup), e.g. while the game is running.
-/// - `on_delete`: optional callback `(index, id)`. If `None`, no 🗑 button is
-///   shown; if `Some`, every option row gets a trash button that fires the
+/// - `on_delete`: optional callback `(index, id)`. If `None`, no trash button
+///   is shown; if `Some`, every option row gets a trash button that fires the
 ///   callback without changing the selection.
 /// - `on_search`: optional filter callback `(query) -> filtered items`. If
 ///   `Some`, a search bar is rendered on top of the dropdown; as long as the
@@ -161,11 +161,18 @@ pub fn selector(
                     // Data is being fetched: spinner replaces the whole content.
                     ui.set_min_height(LIST_H);
                     if let Some(err) = loading_error {
-                        ui.label(
-                            egui::RichText::new(format!("⚠ {err}"))
-                                .small()
-                                .color(egui::Color32::from_rgb(0xE0, 0x4A, 0x4A)),
-                        );
+                        ui.horizontal(|ui| {
+                            ui.add(crate::ui::icons::tinted(
+                                crate::ui::icons::WARNING,
+                                14.0,
+                                egui::Color32::from_rgb(0xE0, 0x4A, 0x4A),
+                            ));
+                            ui.label(
+                                egui::RichText::new(err)
+                                    .small()
+                                    .color(egui::Color32::from_rgb(0xE0, 0x4A, 0x4A)),
+                            );
+                        });
                         ui.add_space(6.0);
                     }
                     ui.horizontal(|ui| {
@@ -257,18 +264,21 @@ pub fn selector(
                                     ui.close();
                                 }
                                 if let Some(cb) = on_delete.as_deref_mut() {
+                                    let del = crate::ui::icons::icon_button(
+                                        ui,
+                                        crate::ui::icons::TRASH,
+                                        15.0,
+                                        egui::Vec2::ZERO,
+                                        None,
+                                        None,
+                                        enabled,
+                                    );
                                     let del = if enabled {
-                                        ui.add(egui::Button::new("🗑"))
+                                        del.on_hover_text("Delete")
                                     } else {
-                                        ui.add_enabled(false, egui::Button::new("🗑"))
+                                        del.on_disabled_hover_text("Close the running game first")
                                     };
-                                    let clicked = del.clicked();
-                                    if enabled {
-                                        del.on_hover_text("Delete");
-                                    } else {
-                                        del.on_disabled_hover_text("Close the running game first");
-                                    }
-                                    if clicked {
+                                    if del.clicked() {
                                         cb(*row_idx, item_id);
                                     }
                                 }

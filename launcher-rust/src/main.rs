@@ -76,7 +76,12 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "Minecraft Launcher",
         options,
-        Box::new(|_cc| Ok(Box::new(LauncherApp::new()))),
+        Box::new(|cc| {
+            // SVG icons (ui/icons.rs) are rasterized through this loader; the
+            // loader stays registered for the whole app lifetime.
+            egui_extras::install_image_loaders(&cc.egui_ctx);
+            Ok(Box::new(LauncherApp::new()))
+        }),
     )
 }
 
@@ -174,7 +179,7 @@ impl App for LauncherApp {
         let is_busy = self.state.task_snapshot().is_busy();
         if self.was_busy && !is_busy {
             self.state.rescan_versions();
-            // A version picked in the 🔄 picker just finished installing:
+            // A version picked in the reload picker just finished installing:
             // auto-select it and take the launch button out of install mode.
             if let Some(p) = self.state.pending_install.clone() {
                 if let Some(v) = p.matched_installed_id(&self.state.installed_versions) {

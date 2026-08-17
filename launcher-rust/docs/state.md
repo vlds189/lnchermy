@@ -17,6 +17,9 @@
   с `label()` и `matched_installed_id(&list)` (поиск результата установки
   в `installed_versions`: vanilla — точное совпадение, Forge/OptiFine —
   ожидаемые варианты имён папок).
+- `request_picker_open: bool` — 🎮-кнопка сайдбара: главный вид открывает
+  picker-попап в текущем кадре (флаг потребляется в
+  `main_view::launch_options_section`).
 - `rescan_versions()` — сканирует `versions/` (наличие `<id>.json` или
   `<id>.jar`), сохраняет выбор; при отсутствии выбора предпочитает
   последнюю запущенную версию из настроек (`settings.last_version`,
@@ -34,6 +37,6 @@
   в `ui/main_view.rs::launch_version`).
 ### 2026-08-12 — v3.0.0
 - `APP_VERSION` 2.0.0 → 3.0.0.
-### 2026-08-12 — v2.0.0+ (до v3.0.0)
+### 2026-08-12 — v2.0.0 (до v3.0.0)
 - Добавлены `update_msg` (инлайн-статус проверки обновлений)
   и `java_custom` (кастомная мажорная версия Java).

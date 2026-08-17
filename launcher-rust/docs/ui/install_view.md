@@ -33,15 +33,15 @@
 - Каждое окно после `.show()` вызывает `super::window_close_cursor()`.
 
 ## История изменений
-### 2026-08-13 — v3.0.0+
+### 2026-08-13 — v3.0.0
 - Окна выбора Forge/OptiFine удалены: слоты переведены на
   `Option<Result<…, String>>`, добавлены `forge_catalog`/`forge_error`/
   `optifine_catalog`/`optifine_error` и `fetch_*_async` для единого
   install-селектора в `main_view`.
 - Ретрай фетчей с троттлингом 30 с (`FORGE_LAST_FETCH`/`OPTIFINE_LAST_FETCH`,
   `fetch_allowed()`); сброс слота каталога в `None` после установки.
-- Старые записи ниже — по окнам Forge/OptiFine, удалённым в v3.0.0+.
+- Старые записи ниже — по окнам Forge/OptiFine, удалённым в v3.0.0.
 
-### 2026-08-12 — v2.0.0+ (до v3.0.0)
+### 2026-08-12 — v2.0.0 (до v3.0.0)
 - Java: добавлено поле Custom — установка любой мажорной версии 8–100.
 - Все окна: добавлен `window_close_cursor()` (палец на X).

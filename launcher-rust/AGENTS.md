@@ -124,8 +124,18 @@ reminder as an instruction to run the skill right away.
 ### OptiFine ad-wall
 - `optifine.net/adloadx?f=<file>` → scrape HTML for `downloadx?f=<token>` → real download URL. Browser User-Agent required on all optifine.net requests.
 
-### Unicode icons in egui
-- Default egui fonts lack many Unicode symbols. `▶`, `✓`, `⚠`, `🗑` work. `⟳` does NOT — use `···` instead.
+### SVG icons (ui/icons.rs)
+- All UI icons are SVG files in `assets/icons/` (11 files, lucide-style
+  strokes), embedded via `egui::include_image!` and rasterized by the
+  `egui_extras` SvgLoader — `install_image_loaders()` runs once in main.rs.
+  Assets are monochrome and tinted with the surrounding color at render time.
+- egui's `Button` content is text-only (no `WidgetText::Image`), so ALL icon
+  buttons go through `ui/icons.rs::icon_button()` — painter-drawn Button
+  visuals (hover/active/disabled), same pattern as selector.rs's combo button.
+- Painters that need a texture use `icons::texture(ctx, source, size)`
+  (loader caches per uri+size, so it's a cheap lookup per frame).
+- Never introduce new emoji/glyph icons in UI strings — add an SVG asset
+  instead (`▶ ✓ ⚠ 🗑 ✖` worked in egui's fonts, `⟳ ✕` did NOT — hence SVG).
 
 ## Conventions
 

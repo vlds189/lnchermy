@@ -5,7 +5,6 @@
 // benefits from one. The ✖ is painted INSIDE the field, on the right edge,
 // as a raw interact rect — not a sibling Button — so the field width never
 // changes when it appears (no layout jump) and no extra row/column is used.
-
 use egui::{Align2, Response, Sense, Ui};
 
 /// Horizontal distance from the field's right edge to the ✖ center.
@@ -107,7 +106,7 @@ impl<'a> TextInput<'a> {
         );
         let clear_resp = ui.interact(rect, clear_id, Sense::click());
 
-        // Subtle: paint the hover pill BEFORE the glyph so the ✖ stays on top.
+        // Subtle: paint the hover pill BEFORE the icon so the cross stays on top.
         let hovered = clear_resp.hovered();
         if hovered {
             ui.painter().rect(
@@ -123,13 +122,17 @@ impl<'a> TextInput<'a> {
         } else {
             ui.visuals().widgets.inactive.fg_stroke.color
         };
-        // ✖ (not ✕): the lighter glyph is missing from egui's default font —
-        // same reason the Close Game button uses ✖.
-        let galley =
-            ui.painter()
-                .layout_no_wrap("✖".to_owned(), egui::FontId::proportional(11.0), color);
-        let pos = Align2::CENTER_CENTER.align_size_within_rect(galley.size(), rect).min;
-        ui.painter().galley(pos, galley, color);
+        // The cross is the SVG close icon (ui/icons.rs), painted as a texture
+        // so it stays crisp at any DPI; tinted with the field's text color.
+        let icon_rect = Align2::CENTER_CENTER.align_size_within_rect(
+            egui::vec2(11.0, 11.0),
+            rect,
+        );
+        if let Some(tex) = crate::ui::icons::texture(ui.ctx(), crate::ui::icons::CLOSE, 11.0) {
+            let full_uv =
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+            ui.painter().image(tex, icon_rect, full_uv, color);
+        }
 
         // on_hover_* consume the Response; chain them and capture the click
         // first.

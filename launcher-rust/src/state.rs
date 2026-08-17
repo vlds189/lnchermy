@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 /// Launcher version, bumped per release. Matches version.json in the repo.
-pub const APP_VERSION: &str = "3.0.12";
+pub const APP_VERSION: &str = "3.0.13";
 
 /// What the launcher is currently doing. Drives the UI (idle vs progress vs error).
 #[derive(Debug, Clone, Default)]
@@ -118,14 +118,17 @@ pub struct AppState {
     /// Tracks whether the launch button was hovered last frame (for showing
     /// "Launch" text on hover when in Error state).
     pub launch_btn_hovered: bool,
-    /// Version picked from the 🔄 picker popup that is NOT installed yet.
+    /// Version picked from the version picker popup that is NOT installed yet.
     /// While set, the Launch button becomes "Install <...>" instead of
     /// "LAUNCH". Cleared automatically once the version installs. Carries
     /// the install kind so Forge/OptiFine rows arm the same mode as vanilla.
     pub pending_install: Option<PendingInstall>,
+    /// Set by the gamepad sidebar button: the main view must open the version
+    /// picker popup this frame (leaves settings when they are open).
+    pub request_picker_open: bool,
 }
 
-/// What the 🔄 picker armed the Launch button to install. Uniform "pick a row
+/// What the version picker armed the Launch button to install. Uniform "pick a row
 /// → click Install" flow for every kind of version (vanilla / mod-loaders).
 #[derive(Debug, Clone)]
 pub enum PendingInstall {
@@ -206,6 +209,7 @@ impl AppState {
             game_child: Arc::new(Mutex::new(None)),
             launch_btn_hovered: false,
             pending_install: None,
+            request_picker_open: false,
         };
         state
     }

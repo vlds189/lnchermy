@@ -46,35 +46,104 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         .resizable(false)
         .show(ui, |ui| {
         ui.add_space(6.0);
-        let (icon, hover) = match state.settings.theme {
-            crate::settings::Theme::Dark => ("☀", "Switch to light theme"),
-            crate::settings::Theme::Light => ("🌙", "Switch to dark theme"),
+        // Theme toggle: the icon depends on the current theme (sun = switch
+        // to light, moon = switch to dark).
+        let theme_icon = match state.settings.theme {
+            crate::settings::Theme::Dark => super::icons::SUN,
+            crate::settings::Theme::Light => super::icons::MOON,
+        };
+        let theme_hover = match state.settings.theme {
+            crate::settings::Theme::Dark => "Switch to light theme",
+            crate::settings::Theme::Light => "Switch to dark theme",
         };
         if show_text {
-            if ui
-                .add(egui::Button::new(format!("{icon} Theme")).min_size(egui::vec2(94.0, 0.0)))
-                .on_hover_text(hover)
-                .clicked()
+            if super::icons::icon_button(
+                ui,
+                theme_icon,
+                18.0,
+                egui::vec2(94.0, 0.0),
+                Some("Theme"),
+                None,
+                true,
+            )
+            .on_hover_text(theme_hover)
+            .clicked()
             {
                 state.settings.theme = state.settings.theme.toggle();
                 crate::theme::apply(ui.ctx(), state.settings.theme);
                 let _ = state.save_settings();
             }
             ui.add_space(4.0);
-            if ui
-                .add(egui::Button::new("⚙ Settings").min_size(egui::vec2(94.0, 0.0)))
-                .clicked()
+            // Gamepad = back to the version picker: leaves settings (if open) and
+            // asks the launch row to open the picker popup this frame.
+            if super::icons::icon_button(
+                ui,
+                super::icons::GAMEPAD,
+                18.0,
+                egui::vec2(94.0, 0.0),
+                Some("Versions"),
+                None,
+                true,
+            )
+            .on_hover_text("Back to version selection")
+            .clicked()
+            {
+                state.show_settings = false;
+                super::settings_view::mark_leaving(ui.ctx());
+                state.request_picker_open = true;
+            }
+            ui.add_space(4.0);
+            if super::icons::icon_button(
+                ui,
+                super::icons::GEAR,
+                18.0,
+                egui::vec2(94.0, 0.0),
+                Some("Settings"),
+                None,
+                true,
+            )
+            .clicked()
             {
                 state.show_settings = true;
             }
         } else {
-            if ui.add(egui::Button::new(icon)).on_hover_text(hover).clicked() {
+            if super::icons::icon_button(ui, theme_icon, 18.0, egui::Vec2::ZERO, None, None, true)
+                .on_hover_text(theme_hover)
+                .clicked()
+            {
                 state.settings.theme = state.settings.theme.toggle();
                 crate::theme::apply(ui.ctx(), state.settings.theme);
                 let _ = state.save_settings();
             }
             ui.add_space(4.0);
-            if ui.add(egui::Button::new("⚙")).clicked() {
+            if super::icons::icon_button(
+                ui,
+                super::icons::GAMEPAD,
+                18.0,
+                egui::Vec2::ZERO,
+                None,
+                None,
+                true,
+            )
+            .on_hover_text("Back to version selection")
+            .clicked()
+            {
+                state.show_settings = false;
+                super::settings_view::mark_leaving(ui.ctx());
+                state.request_picker_open = true;
+            }
+            ui.add_space(4.0);
+            if super::icons::icon_button(
+                ui,
+                super::icons::GEAR,
+                18.0,
+                egui::Vec2::ZERO,
+                None,
+                None,
+                true,
+            )
+            .clicked()
+            {
                 state.show_settings = true;
             }
         }
@@ -236,32 +305,25 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
     let task_busy = state.task_snapshot().is_busy();
     let launch_version_id = state.selected_version.clone().unwrap_or_default();
 
-    let (btn_text, btn_bg, enabled) = match &launch_status {
+    let (btn_icon, btn_text, btn_bg, enabled) = match &launch_status {
         crate::state::LaunchStatus::Launching => (
-            RichText::new("⟳  Launching…").strong(),
+            super::icons::LOADING,
+            "Launching…".to_owned(),
             Some(Color32::from_rgb(0xD4, 0xA0, 0x17)),
             false,
         ),
         crate::state::LaunchStatus::Running(ver) => {
             if state.launch_btn_hovered {
                 // On hover: offer to close the game.
-                (
-                    RichText::new("✖  Close Game").strong(),
-                    Some(ERROR),
-                    true,
-                )
+                (super::icons::CLOSE, "Close Game".to_owned(), Some(ERROR), true)
             } else {
                 // Always enabled so hover is detected (disabled buttons
                 // don't register hover in egui). Click opens a confirm dialog.
-                (
-                    RichText::new(format!("▶  Running: {ver}")).strong(),
-                    Some(ACCENT),
-                    true,
-                )
+                (super::icons::PLAY, format!("Running: {ver}"), Some(ACCENT), true)
             }
         }
         _ if state.pending_install.is_some() => {
-            // A version picked in the 🔄 picker that is still missing on
+            // A version picked in the reload picker that is still missing on
             // disk: the Launch button turns into the installer for it. Takes
             // precedence over any stale launch Error — install is the active
             // intent now.
@@ -271,45 +333,55 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
                 .map(PendingInstall::label)
                 .unwrap_or_default();
             (
-                RichText::new(format!("⬇  Install {label}")).strong(),
+                super::icons::DOWNLOAD,
+                format!("Install {label}"),
                 Some(INFO),
                 !task_busy,
             )
         }
         crate::state::LaunchStatus::Error(_) if !state.launch_btn_hovered => (
-            RichText::new("⚠  Error").strong(),
+            super::icons::WARNING,
+            "Error".to_owned(),
             Some(ERROR),
             true,
         ),
         _ => (
-            RichText::new(format!("▶  LAUNCH {launch_version_id}")).strong(),
+            super::icons::PLAY,
+            format!("LAUNCH {launch_version_id}"),
             None,
             !no_version && !task_busy,
         ),
     };
 
-    let mut btn = egui::Button::new(btn_text).min_size(egui::vec2(200.0, 34.0));
-    if let Some(bg) = btn_bg {
-        btn = btn.fill(bg);
-    }
-
-    // Reload / picker button next to Launch. Uses the 🔄 emoji glyph (present
-    // in egui's bundled NotoEmoji font; verified via cmap). Clicking it
-    // toggles a picker popup anchored below the launch row.
+    // Placed before the button below: `launch_btn_hovered` must reflect the
+    // PREVIOUS frame's hover so the state match above can offer "Close Game".
     let mut reload_clicked = false;
     let (resp, row_response) = {
         let row = ui.horizontal(|ui| {
-            let resp = ui.add_enabled(enabled, btn);
+            let resp = super::icons::icon_button(
+                ui,
+                btn_icon,
+                18.0,
+                egui::vec2(200.0, 34.0),
+                Some(&btn_text),
+                btn_bg,
+                enabled,
+            );
             state.launch_btn_hovered = resp.hovered();
 
             ui.add_space(6.0);
-            let rresp = ui
-                .add(
-                    egui::Button::new("🔄")
-                        .min_size(egui::vec2(34.0, 34.0))
-                        .fill(ACCENT.linear_multiply(0.15)),
-                )
-                .on_hover_text("Change / Install new version");
+            let rresp = super::icons::icon_button(
+                ui,
+                super::icons::RELOAD,
+                18.0,
+                egui::vec2(34.0, 34.0),
+                None,
+                Some(ACCENT.linear_multiply(0.15)),
+                // Always enabled: it is the ONLY way to pick a version when
+                // none exists yet (no_version disables the launch button).
+                true,
+            );
+            let rresp = rresp.on_hover_text("Change / Install new version");
             reload_clicked = rresp.clicked();
             resp
         });
@@ -323,7 +395,7 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
             }
             _ if state.pending_install.is_some() => {
                 // The launch button is in "install" mode: clicking it starts
-                // the install of the version picked in the 🔄 picker (the
+                // the install of the version picked in the reload picker (the
                 // kind decides vanilla vs Forge vs OptiFine install).
                 match state.pending_install.clone() {
                     Some(PendingInstall::Vanilla(v)) => start_vanilla_download(state, v),
@@ -345,12 +417,19 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
         }
     }
 
-    // Version picker popup, toggled by the 🔄 button. Anchored to the whole
+    // Version picker popup, toggled by the reload button. Anchored to the whole
     // launch row so it opens right under the launch button. The open state
-    // lives in egui's memory (so it survives repaints); a click on the 🔄
+    // lives in egui's memory (so it survives repaints); a click on the reload
     // button toggles it, a click anywhere else closes it.
     let picker_id = egui::Id::new("launch_picker");
-    let toggle = reload_clicked.then_some(egui::SetOpenCommand::Toggle);
+    // The gamepad sidebar button asks for the picker to open this frame (and to
+    // leave settings, if open); the request is consumed here.
+    let toggle = if state.request_picker_open {
+        state.request_picker_open = false;
+        Some(egui::SetOpenCommand::Bool(true))
+    } else {
+        reload_clicked.then_some(egui::SetOpenCommand::Toggle)
+    };
     // Memory reflects the PREVIOUS frame's state, so `was_open` is false
     // exactly on the opening frame — the search bar uses this to autofocus.
     let was_open = egui::Popup::is_id_open(ui.ctx(), picker_id);
@@ -376,7 +455,7 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
         );
     } else if no_version {
         ui.label(
-            RichText::new("Pick an installed version with 🔄 to launch.")
+            RichText::new("Pick an installed version to launch.")
                 .small()
                 .color(Color32::GRAY),
         );
@@ -391,7 +470,7 @@ fn launch_section(_ui: &mut Ui, _state: &mut AppState) {
     // Reserved for future install UI; currently unused.
 }
 
-/// Content of the 🔄 version picker popup: installed versions first, then
+/// Content of the version picker popup: installed versions first, then
 /// catalog versions that are not installed yet. Picking an installed version
 /// selects it; picking a missing one arms the "Install <...>" mode on the
 /// launch button (stored in `state.pending_install`, kind-aware: vanilla /
@@ -425,7 +504,9 @@ fn picker_popup_content(ui: &mut Ui, state: &mut AppState, was_open: bool) {
 
     enum Row {
         Header(Section),
-        Hint(String),
+        /// `(text, warn)`: `warn` shows a warning icon next to the hint
+        /// (catalog errors); plain loading hints have no icon.
+        Hint(String, bool),
         Installed(String, String), // label, id
         Remote(String),            // id
         Forge(String, String),     // mc version, build
@@ -446,11 +527,14 @@ fn picker_popup_content(ui: &mut Ui, state: &mut AppState, was_open: bool) {
         // Catalog not fetched yet: trigger the same background fetch the
         // install section uses and show a spinner while it loads.
         if let Some(Err(e)) = MANIFEST.lock().unwrap().clone() {
-            ui.label(
-                egui::RichText::new(format!("⚠ Manifest error: {e}"))
-                    .small()
-                    .color(ERROR),
-            );
+            ui.horizontal(|ui| {
+                ui.add(super::icons::tinted(super::icons::WARNING, 14.0, ERROR));
+                ui.label(
+                    egui::RichText::new(format!("Manifest error: {e}"))
+                        .small()
+                        .color(ERROR),
+                );
+            });
         } else {
             fetch_manifest_async(state);
         }
@@ -503,7 +587,10 @@ fn picker_popup_content(ui: &mut Ui, state: &mut AppState, was_open: bool) {
         if !installed_collapsed {
             if state.installed_versions.is_empty() && q.is_empty() {
                 // Empty state: gray hint mirrors the old standalone list message.
-                rows.push(Row::Hint("Nothing installed yet — pick a version below".to_string()));
+                rows.push(Row::Hint(
+                    "Nothing installed yet — pick a version below".to_string(),
+                    false,
+                ));
             }
             for v in &state.installed_versions {
                 if matches_q(v) {
@@ -609,19 +696,19 @@ fn picker_popup_content(ui: &mut Ui, state: &mut AppState, was_open: bool) {
     // known yet; once loaded they slot into mc_order above).
     if forge_data.is_none() {
         super::install_view::fetch_forge_async();
-        not_installed.push(Row::Hint(
-            super::install_view::forge_error()
-                .map(|e| format!("⚠ Forge: {e}"))
-                .unwrap_or_else(|| "Loading Forge catalog…".to_string()),
-        ));
+        let (msg, warn) = match super::install_view::forge_error() {
+            Some(e) => (format!("Forge: {e}"), true),
+            None => ("Loading Forge catalog…".to_string(), false),
+        };
+        not_installed.push(Row::Hint(msg, warn));
     }
     if optifine_data.is_none() {
         super::install_view::fetch_optifine_async();
-        not_installed.push(Row::Hint(
-            super::install_view::optifine_error()
-                .map(|e| format!("⚠ OptiFine: {e}"))
-                .unwrap_or_else(|| "Loading OptiFine catalog…".to_string()),
-        ));
+        let (msg, warn) = match super::install_view::optifine_error() {
+            Some(e) => (format!("OptiFine: {e}"), true),
+            None => ("Loading OptiFine catalog…".to_string(), false),
+        };
+        not_installed.push(Row::Hint(msg, warn));
     }
 
     if !not_installed.is_empty() {
@@ -634,7 +721,7 @@ fn picker_popup_content(ui: &mut Ui, state: &mut AppState, was_open: bool) {
     // No matches at all: a bare empty scroll area looks like a bug, so show
     // a hint (mirrors the selector's "Empty" row).
     if rows.is_empty() {
-        rows.push(Row::Hint("No versions match the search".to_string()));
+        rows.push(Row::Hint("No versions match the search".to_string(), false));
     }
 
     // Persist the query for the next frame while the popup is open.
@@ -713,14 +800,23 @@ fn picker_popup_content(ui: &mut Ui, state: &mut AppState, was_open: bool) {
                             ui.painter().galley(text_pos, galley, text_color);
                         }
                     }
-                    Row::Hint(label) => {
+                    Row::Hint(label, warn) => {
                         ui.add_space(2.0);
-                        ui.label(
-                            egui::RichText::new(label)
-                                .small()
-                                .color(egui::Color32::GRAY)
-                                .italics(),
-                        );
+                        ui.horizontal(|ui| {
+                            if *warn {
+                                ui.add(super::icons::tinted(
+                                    super::icons::WARNING,
+                                    14.0,
+                                    egui::Color32::GRAY,
+                                ));
+                            }
+                            ui.label(
+                                egui::RichText::new(label)
+                                    .small()
+                                    .color(egui::Color32::GRAY)
+                                    .italics(),
+                            );
+                        });
                         ui.add_space(2.0);
                     }
                     Row::Installed(label, id) => {
@@ -743,11 +839,21 @@ fn picker_popup_content(ui: &mut Ui, state: &mut AppState, was_open: bool) {
                                 ui.close();
                             }
                             // Delete button on installed rows only (mirrors the
-                            // old top selector's 🗑). Disabled while a game runs.
+                            // old top selector's trash). Disabled while a game
+                            // runs.
+                            let del = super::icons::icon_button(
+                                ui,
+                                super::icons::TRASH,
+                                15.0,
+                                egui::Vec2::ZERO,
+                                None,
+                                None,
+                                !game_running,
+                            );
                             let del = if game_running {
-                                ui.add_enabled(false, egui::Button::new("🗑"))
+                                del.on_disabled_hover_text("Close the running game first")
                             } else {
-                                ui.add(egui::Button::new("🗑"))
+                                del
                             };
                             if del.clicked() {
                                 state.pending_delete = Some(id.clone());
@@ -941,7 +1047,7 @@ fn install_section(ui: &mut Ui, state: &mut AppState) {
     }
 
     // The old unified "Install type…" selector is gone: vanilla, Forge and
-    // OptiFine installs all live in the 🔄 launch picker now. What remains
+    // OptiFine installs all live in the launch picker now. What remains
     // here are the two installs that are not version-picker rows.
     let busy = state.task_snapshot().is_busy();
     ui.horizontal_wrapped(|ui| {
