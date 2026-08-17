@@ -5,13 +5,13 @@ use crate::theme::{ACCENT, ERROR, INFO};
 use egui::{Align, Color32, Layout, RichText, Ui};
 
 /// Key of the "settings was open" temp flag: buffered edits (username /
-/// content URL) are seeded on entry and forgotten on leaving (‹ Back or
-/// the gamepad sidebar button).
+/// content URL) are seeded on entry and forgotten on leaving (the gamepad
+/// sidebar button — settings has no Back button of its own).
 const OPEN_FLAG_ID: &str = "settings_was_open";
 
-/// Forget the edit buffers — the user left settings by any route (‹ Back,
-/// or the gamepad sidebar button), so the next visit re-seeds them from the
-/// saved values (see render()).
+/// Forget the edit buffers — the user left settings (the gamepad sidebar
+/// button), so the next visit re-seeds them from the saved values (see
+/// render()).
 pub fn mark_leaving(ctx: &egui::Context) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::new(OPEN_FLAG_ID), false));
 }
@@ -37,12 +37,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     // This view is docked into the main window's central area (main_view
     // owns the top bar / side panel / status bar) — no panels of its own.
-    // Header row: back button + title.
+    // Header row: title + version. Leaving settings = the gamepad sidebar
+    // button (a Back button was removed as redundant).
     ui.horizontal(|ui| {
-        if ui.button("‹ Back").clicked() {
-            mark_leaving(ui.ctx());
-            state.show_settings = false;
-        }
         ui.heading(RichText::new("Settings").color(ACCENT).strong());
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.label(

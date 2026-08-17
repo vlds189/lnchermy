@@ -25,21 +25,25 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     let prev_rect = ui
         .ctx()
         .data(|d| d.get_temp::<egui::Rect>(side_id))
-        .unwrap_or_else(|| egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(110.0, 200.0)));
+        .unwrap_or_else(|| egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(126.0, 200.0)));
     let hovered = ui
         .ctx()
         .pointer_hover_pos()
         .is_some_and(|p| prev_rect.expand(12.0).contains(p));
     // Collapsed width fits the icon button (≈34px) plus an 8px margin on
     // either side, so the buttons don't press against the panel edge.
-    let target_w = if hovered { 110.0 } else { 52.0 };
+    // Expanded width must fit the longest label ("Dashboard" needs ~104px
+    // of button) plus the panel frame margins.
+    let target_w = if hovered { 126.0 } else { 52.0 };
     let side_w = ui.ctx().animate_value_with_time(side_id, target_w, 0.18);
     if (side_w - target_w).abs() > 0.5 {
         ui.ctx().request_repaint();
     }
     // Buttons keep constant size while the panel animates: icon-only until the
     // panel is nearly full, then the label pops in. Same left edge → no shake.
-    let show_text = side_w > 108.0;
+    // The threshold (120) equals the expanded width minus frame margins minus
+    // the widest label, so the label never overflows the panel mid-animation.
+    let show_text = side_w > 120.0;
 
     let side_inner = egui::Panel::left("side_panel")
         .exact_size(side_w)
@@ -57,11 +61,14 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             crate::settings::Theme::Light => "Switch to dark theme",
         };
         if show_text {
+            // Fixed width ≥ widest label ("Dashboard" ≈104px), so all three
+            // sidebar buttons render exactly the same size.
+            const SIDEBAR_BTN_W: f32 = 104.0;
             if super::icons::icon_button(
                 ui,
                 theme_icon,
                 18.0,
-                egui::vec2(94.0, 0.0),
+                egui::vec2(SIDEBAR_BTN_W, 0.0),
                 Some("Theme"),
                 None,
                 true,
@@ -74,30 +81,30 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 let _ = state.save_settings();
             }
             ui.add_space(4.0);
-            // Gamepad = back to the version picker: leaves settings (if open) and
-            // asks the launch row to open the picker popup this frame.
+            // Gamepad = Dashboard: leaves settings (if open) and shows the
+            // main screen. The version picker is NOT opened here anymore —
+            // it has its own reload button next to Launch.
             if super::icons::icon_button(
                 ui,
                 super::icons::GAMEPAD,
                 18.0,
-                egui::vec2(94.0, 0.0),
-                Some("Versions"),
+                egui::vec2(SIDEBAR_BTN_W, 0.0),
+                Some("Dashboard"),
                 None,
                 true,
             )
-            .on_hover_text("Back to version selection")
+            .on_hover_text("Back to the main screen")
             .clicked()
             {
                 state.show_settings = false;
                 super::settings_view::mark_leaving(ui.ctx());
-                state.request_picker_open = true;
             }
             ui.add_space(4.0);
             if super::icons::icon_button(
                 ui,
                 super::icons::GEAR,
                 18.0,
-                egui::vec2(94.0, 0.0),
+                egui::vec2(SIDEBAR_BTN_W, 0.0),
                 Some("Settings"),
                 None,
                 true,
@@ -125,12 +132,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 None,
                 true,
             )
-            .on_hover_text("Back to version selection")
+            .on_hover_text("Back to the main screen")
             .clicked()
             {
                 state.show_settings = false;
                 super::settings_view::mark_leaving(ui.ctx());
-                state.request_picker_open = true;
             }
             ui.add_space(4.0);
             if super::icons::icon_button(
@@ -422,14 +428,7 @@ fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
     // lives in egui's memory (so it survives repaints); a click on the reload
     // button toggles it, a click anywhere else closes it.
     let picker_id = egui::Id::new("launch_picker");
-    // The gamepad sidebar button asks for the picker to open this frame (and to
-    // leave settings, if open); the request is consumed here.
-    let toggle = if state.request_picker_open {
-        state.request_picker_open = false;
-        Some(egui::SetOpenCommand::Bool(true))
-    } else {
-        reload_clicked.then_some(egui::SetOpenCommand::Toggle)
-    };
+    let toggle = reload_clicked.then_some(egui::SetOpenCommand::Toggle);
     // Memory reflects the PREVIOUS frame's state, so `was_open` is false
     // exactly on the opening frame — the search bar uses this to autofocus.
     let was_open = egui::Popup::is_id_open(ui.ctx(), picker_id);

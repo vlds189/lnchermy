@@ -17,9 +17,6 @@
   с `label()` и `matched_installed_id(&list)` (поиск результата установки
   в `installed_versions`: vanilla — точное совпадение, Forge/OptiFine —
   ожидаемые варианты имён папок).
-- `request_picker_open: bool` — 🎮-кнопка сайдбара: главный вид открывает
-  picker-попап в текущем кадре (флаг потребляется в
-  `main_view::launch_options_section`).
 - `rescan_versions()` — сканирует `versions/` (наличие `<id>.json` или
   `<id>.jar`), сохраняет выбор; при отсутствии выбора предпочитает
   последнюю запущенную версию из настроек (`settings.last_version`,
