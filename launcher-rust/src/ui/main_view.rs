@@ -18,23 +18,15 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         ui.add_space(4.0);
     });
 
-    // Side bar: icon-only when not hovered, expands to show labels on hover.
-    // Width is animated; the previous frame's rect is remembered via temp data
-    // so hover can be tested before the panel is laid out this frame.
+    // Side bar: icon-only when collapsed, expands to show labels via the ☰
+    // toggle button at its top (no more hover-based expansion — the toggle
+    // is explicit and the state is stable while the pointer wanders).
     let side_id = egui::Id::new("side_panel_anim");
-    let prev_rect = ui
-        .ctx()
-        .data(|d| d.get_temp::<egui::Rect>(side_id))
-        .unwrap_or_else(|| egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(126.0, 200.0)));
-    let hovered = ui
-        .ctx()
-        .pointer_hover_pos()
-        .is_some_and(|p| prev_rect.expand(12.0).contains(p));
     // Collapsed width fits the icon button (≈34px) plus an 8px margin on
     // either side, so the buttons don't press against the panel edge.
     // Expanded width must fit the longest label ("Dashboard" needs ~104px
     // of button) plus the panel frame margins.
-    let target_w = if hovered { 126.0 } else { 52.0 };
+    let target_w = if state.sidebar_expanded { 126.0 } else { 52.0 };
     let side_w = ui.ctx().animate_value_with_time(side_id, target_w, 0.18);
     if (side_w - target_w).abs() > 0.5 {
         ui.ctx().request_repaint();
@@ -45,12 +37,15 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     // the widest label, so the label never overflows the panel mid-animation.
     let show_text = side_w > 120.0;
 
-    let side_inner = egui::Panel::left("side_panel")
+    egui::Panel::left("side_panel")
         .exact_size(side_w)
         .resizable(false)
         .show(ui, |ui| {
         ui.add_space(6.0);
-        // Theme toggle: the icon depends on the current theme (sun = switch
+        // Fixed width ≥ widest label ("Dashboard" ≈104px), so all
+        // sidebar buttons render exactly the same size.
+        const SIDEBAR_BTN_W: f32 = 104.0;
+        // Theme icons/hover depend on the current theme (sun = switch
         // to light, moon = switch to dark).
         let theme_icon = match state.settings.theme {
             crate::settings::Theme::Dark => super::icons::SUN,
@@ -60,10 +55,73 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             crate::settings::Theme::Dark => "Switch to light theme",
             crate::settings::Theme::Light => "Switch to dark theme",
         };
+
+        // ☰ Sidebar toggle above everything: collapses/expands the panel.
+        // Only the ICON is the button (hover pill wraps it alone); the
+        // "lnchermy" name in expanded mode is a plain label to its left,
+        // on the same row. The row is allocated explicitly (fixed height =
+        // one button) — a plain horizontal + with_layout produced a
+        // full-height sub-region that stacked the label above the icon.
+        let mut toggle_clicked = false;
+        let toggle_hover = if state.sidebar_expanded {
+            "Collapse sidebar"
+        } else {
+            "Expand sidebar"
+        };
         if show_text {
-            // Fixed width ≥ widest label ("Dashboard" ≈104px), so all three
-            // sidebar buttons render exactly the same size.
-            const SIDEBAR_BTN_W: f32 = 104.0;
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), ui.spacing().interact_size.y),
+                // right_to_left: first added lands at the right edge — the
+                // icon button — then the label flows to the left of it.
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    toggle_clicked = super::icons::nav_button(
+                        ui,
+                        super::icons::SIDEBAR,
+                        18.0,
+                        egui::Vec2::ZERO,
+                        None,
+                        false,
+                    )
+                    .on_hover_text(toggle_hover)
+                    .clicked();
+                    // The name is PAINTED (same layout_no_wrap +
+                    // TextStyle::Button pipeline the nav buttons use for
+                    // their labels — pixel-identical font) instead of being
+                    // a Label widget: there is no text widget, so it can
+                    // never be selected, and no hover/selection visuals.
+                    let galley = ui.painter().layout_no_wrap(
+                        "lnchermy".to_owned(),
+                        egui::TextStyle::Button.resolve(ui.style()),
+                        ui.visuals().text_color(),
+                    );
+                    let (rect, _) =
+                        ui.allocate_exact_size(galley.size(), egui::Sense::hover());
+                    let pos = egui::pos2(
+                        rect.left(),
+                        rect.center().y - galley.size().y / 2.0,
+                    );
+                    ui.painter().galley(pos, galley, ui.visuals().text_color());
+                },
+            );
+        } else {
+            toggle_clicked = super::icons::nav_button(
+                ui,
+                super::icons::SIDEBAR,
+                18.0,
+                egui::Vec2::ZERO,
+                None,
+                false,
+            )
+            .on_hover_text(toggle_hover)
+            .clicked();
+        }
+        if toggle_clicked {
+            state.sidebar_expanded = !state.sidebar_expanded;
+        }
+        ui.add_space(4.0);
+
+        if show_text {
             // Gamepad = Dashboard: leaves settings (if open) and shows the
             // main screen. The version picker is NOT opened here anymore —
             // it has its own reload button next to Launch.
@@ -158,7 +216,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             }
         });
     });
-    ui.ctx().data_mut(|d| d.insert_temp(side_id, side_inner.response.rect));
 
     // Status bar at the bottom mirrors the PowerShell "Press Enter" lines.
     egui::Panel::bottom("status_bar").show(ui, |ui| {

@@ -25,6 +25,7 @@ pub const DOWNLOAD: ImageSource<'static> = egui::include_image!("../../assets/ic
 pub const WARNING: ImageSource<'static> = egui::include_image!("../../assets/icons/warning.svg");
 pub const TRASH: ImageSource<'static> = egui::include_image!("../../assets/icons/trash.svg");
 pub const LOADING: ImageSource<'static> = egui::include_image!("../../assets/icons/loading.svg");
+pub const SIDEBAR: ImageSource<'static> = egui::include_image!("../../assets/icons/sidebar.svg");
 
 /// Non-interactive `Image` widget: icon at a fixed display size.
 pub fn widget(source: ImageSource<'static>, size: f32) -> Image<'static> {

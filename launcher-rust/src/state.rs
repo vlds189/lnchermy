@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 /// Launcher version, bumped per release. Matches version.json in the repo.
-pub const APP_VERSION: &str = "3.0.15";
+pub const APP_VERSION: &str = "3.0.16";
 
 /// What the launcher is currently doing. Drives the UI (idle vs progress vs error).
 #[derive(Debug, Clone, Default)]
@@ -123,6 +123,9 @@ pub struct AppState {
     /// "LAUNCH". Cleared automatically once the version installs. Carries
     /// the install kind so Forge/OptiFine rows arm the same mode as vanilla.
     pub pending_install: Option<PendingInstall>,
+    /// Whether the sidebar is pinned open (the ☰ toggle button). The width
+    /// animates toward this flag; it is UI-only state, not persisted.
+    pub sidebar_expanded: bool,
 }
 
 /// What the version picker armed the Launch button to install. Uniform "pick a row
@@ -206,6 +209,7 @@ impl AppState {
             game_child: Arc::new(Mutex::new(None)),
             launch_btn_hovered: false,
             pending_install: None,
+            sidebar_expanded: false,
         };
         state
     }
