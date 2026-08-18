@@ -67,6 +67,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         ui.separator();
         ui.add_space(10.0);
 
+        install_section(ui, state);
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(10.0);
+
         theme_section(ui, state);
         ui.add_space(10.0);
         ui.separator();
@@ -177,6 +182,25 @@ fn content_index_section(ui: &mut Ui, state: &mut AppState) {
         state.settings.content_index_url = url.trim().to_string();
         let _ = state.save_settings();
     }
+}
+
+fn install_section(ui: &mut Ui, state: &mut AppState) {
+    ui.label(RichText::new("Install").strong());
+    ui.add_space(2.0);
+
+    // Moved here from the main view (v3.0.17): vanilla, Forge and OptiFine
+    // installs live in the launch picker; what remains are the two installs
+    // that are not version-picker rows. Both open modal windows from
+    // install_view (rendered globally by main_view::render, any view active).
+    let busy = state.task_snapshot().is_busy();
+    ui.horizontal_wrapped(|ui| {
+        if ui.add_enabled(!busy, egui::Button::new("Java")).clicked() {
+            state.show_install_java = true;
+        }
+        if ui.add_enabled(!busy, egui::Button::new("Mods / Resourcepacks")).clicked() {
+            state.show_content = true;
+        }
+    });
 }
 
 fn theme_section(ui: &mut Ui, state: &mut AppState) {

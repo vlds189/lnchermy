@@ -238,18 +238,12 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     });
 
     // Main content. Settings is docked into this same central area (window
-    // chrome above/below stays) — it swaps out the launch/install sections.
+    // chrome above/below stays) — it swaps out the launch section.
     egui::CentralPanel::default().show(ui, |ui| {
         if state.show_settings {
             super::settings_view::render(ui, state);
         } else {
             launch_options_section(ui, state);
-
-            ui.add_space(10.0);
-            ui.separator();
-            ui.add_space(6.0);
-
-            install_section(ui, state);
         }
     });
 
@@ -343,6 +337,14 @@ fn start_vanilla_download(state: &mut AppState, version: String) {
 }
 
 fn launch_options_section(ui: &mut Ui, state: &mut AppState) {
+    // Drain the manifest produced by the background fetch into the picker
+    // (Ok only; an error stays in the slot so the picker can surface it).
+    // Was previously drained by the Install section, which now lives in
+    // settings — without this the picker would never see the catalog.
+    if let Some(Ok(ids)) = MANIFEST.lock().unwrap().take() {
+        state.remote_versions = ids;
+    }
+
     ui.label(RichText::new("Launch options").strong());
     ui.add_space(2.0);
 
@@ -1094,30 +1096,6 @@ fn delete_confirm_window(ctx: &egui::Context, state: &mut AppState) {
     if !open {
         state.pending_delete = None;
     }
-}
-
-fn install_section(ui: &mut Ui, state: &mut AppState) {
-    ui.label(RichText::new("Install").strong());
-    ui.add_space(2.0);
-
-    // Drain the manifest produced by the background fetch (Ok only; an error
-    // stays in the slot so the picker can surface it).
-    if let Some(Ok(ids)) = MANIFEST.lock().unwrap().take() {
-        state.remote_versions = ids;
-    }
-
-    // The old unified "Install type…" selector is gone: vanilla, Forge and
-    // OptiFine installs all live in the launch picker now. What remains
-    // here are the two installs that are not version-picker rows.
-    let busy = state.task_snapshot().is_busy();
-    ui.horizontal_wrapped(|ui| {
-        if ui.add_enabled(!busy, egui::Button::new("Java")).clicked() {
-            state.show_install_java = true;
-        }
-        if ui.add_enabled(!busy, egui::Button::new("Mods / Resourcepacks")).clicked() {
-            state.show_content = true;
-        }
-    });
 }
 
 /// Fetch the Mojang manifest in a background thread, storing the result (or
